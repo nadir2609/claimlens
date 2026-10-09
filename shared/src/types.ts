@@ -79,7 +79,7 @@ export interface PartListing {
   title: string;
   price: number;
   url: string;
-  /** The site the listing came from, for example "avtopro.az". */
+  /** The site the listing came from, for example "rockauto.com". */
   source: string;
 }
 
@@ -136,7 +136,7 @@ export interface CostEstimate {
   makeTier: 'economy' | 'mid' | 'luxury';
   tierMultiplier: number;
   laborRate: number;
-  currency: 'AZN';
+  currency: 'USD';
 }
 
 export interface Coverage {

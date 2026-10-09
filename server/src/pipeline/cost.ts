@@ -2,13 +2,12 @@ import type {
   CostEstimate, CostLine, DamageItem, DamageType, Part, PartSearchResult, Severity,
 } from '@claimlens/shared';
 
-// All amounts are in Azerbaijani manat (AZN). Labour, paint and the fallback part prices are placeholder
-// figures (the original USD placeholders converted at about 1.7 AZN per USD), not market data.
-export const LABOR_RATE = 160;
+// All amounts are in US dollars. Labour, paint and the fallback part prices are placeholder figures, not market data.
+export const LABOR_RATE = 95;
 
 /** Used only when no marketplace listing is found for a part that must be replaced. */
 export const PART_PRICE: Record<Part, number> = {
-  'Front Bumper': 765, 'Rear Bumper': 714, Hood: 1020, Headlights: 595, Doors: 1190, Fenders: 646, Windshield: 680,
+  'Front Bumper': 450, 'Rear Bumper': 420, Hood: 600, Headlights: 350, Doors: 700, Fenders: 380, Windshield: 400,
 };
 
 export const LABOR_HOURS: Record<DamageType, Record<Severity, number>> = {
@@ -20,7 +19,7 @@ export const LABOR_HOURS: Record<DamageType, Record<Severity, number>> = {
   'Severe Deformation': { Low: 4.0, Medium: 6.0, High: 9.0 },
 };
 
-export const PAINT: Record<Severity, number> = { Low: 255, Medium: 510, High: 765 };
+export const PAINT: Record<Severity, number> = { Low: 150, Medium: 300, High: 450 };
 const UNPAINTED: Part[] = ['Windshield', 'Headlights'];
 
 const TIERS = {
@@ -49,7 +48,7 @@ export const needsReplacement = (item: Pick<DamageItem, 'severity' | 'type'>): b
   item.severity === 'High' || item.type === 'Broken Glass';
 
 /**
- * Prices each damage item. A replaced part costs the cheapest marketplace listing when `found` has an offer for
+ * Prices each damage item. A replaced part costs the cheapest RockAuto listing when `found` has an offer for
  * that part; otherwise the fallback table scaled by make tier. A part with several kinds of damage is bought and
  * painted once: the first line for it (items arrive most severe first) carries those charges.
  */
@@ -100,6 +99,6 @@ export function estimateCost(
     makeTier: tier,
     tierMultiplier: multiplier,
     laborRate: LABOR_RATE,
-    currency: 'AZN',
+    currency: 'USD',
   };
 }

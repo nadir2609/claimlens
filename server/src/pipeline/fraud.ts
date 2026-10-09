@@ -63,8 +63,8 @@ export function assessFraud(input: FraudInput): FraudAssessment {
   const missing = input.photos.length - times.length;
   if (missing > 0) notes.push(`${missing} of ${input.photos.length} photos have no EXIF capture date (informational; many apps strip metadata).`);
 
-  if (input.totalCost > 20_400) {
-    signals.push({ kind: 'high_cost', label: 'Total cost above 20,400 AZN', detail: `Estimate is ${input.totalCost.toFixed(2)} AZN`, points: 10 });
+  if (input.totalCost > 12_000) {
+    signals.push({ kind: 'high_cost', label: 'Total cost above $12,000', detail: `Estimate is $${input.totalCost.toFixed(2)}`, points: 10 });
   }
 
   const score = Math.min(100, signals.reduce((s, x) => s + x.points, 0));

@@ -68,20 +68,20 @@ describe('severity', () => {
 describe('cost', () => {
   it('prices a repair with paint and labour only', () => {
     const c = estimateCost([item('Doors', 'Dent', 'Medium')], 'Toyota');
-    expect(c.lines[0]).toMatchObject({ operation: 'Repair', parts: 0, paint: 510, laborHours: 3, labor: 480, total: 990, partsBasis: 'none' });
-    expect(c.total).toBe(990);
-    expect(c.currency).toBe('AZN');
+    expect(c.lines[0]).toMatchObject({ operation: 'Repair', parts: 0, paint: 300, laborHours: 3, labor: 285, total: 585, partsBasis: 'none' });
+    expect(c.total).toBe(585);
+    expect(c.currency).toBe('USD');
     expect(c.makeTier).toBe('economy');
   });
 
   it('replaces the part at high severity, scaled by make tier', () => {
     const c = estimateCost([item('Front Bumper', 'Dent', 'High')], 'bmw');
-    expect(c.lines[0]).toMatchObject({ operation: 'Replace', parts: 1453.5, paint: 765, laborHours: 5, labor: 800, total: 3018.5, partsBasis: 'estimate', partListing: null });
+    expect(c.lines[0]).toMatchObject({ operation: 'Replace', parts: 855, paint: 450, laborHours: 5, labor: 475, total: 1780, partsBasis: 'estimate', partListing: null });
   });
 
   it('always replaces broken glass, with no paint, and uses the mid tier for unknown makes', () => {
     const c = estimateCost([item('Windshield', 'Broken Glass', 'Low')], 'Unknown');
-    expect(c.lines[0]).toMatchObject({ operation: 'Replace', parts: 884, paint: 0, laborHours: 1.5, labor: 240, total: 1124 });
+    expect(c.lines[0]).toMatchObject({ operation: 'Replace', parts: 520, paint: 0, laborHours: 1.5, labor: 142.5, total: 662.5 });
     expect(c.tierMultiplier).toBe(1.3);
   });
 
@@ -94,35 +94,35 @@ describe('cost', () => {
   });
 
   it('uses the cheapest marketplace listing for a replaced part instead of the estimate', () => {
-    const cheapest = { title: 'Ön bamper BMW', price: 417.61, url: 'https://www.avtopro.az/products/x-1', source: 'avtopro.az' };
-    const other = { ...cheapest, price: 600, url: 'https://www.avtopro.az/products/x-2' };
-    const searchLinks = [{ source: 'avtopro.az', url: 'https://www.avtopro.az/products?search=bamper%20BMW' }];
+    const cheapest = { title: 'TECHPRO BM1000100 (Front)', price: 417.61, url: 'https://www.rockauto.com/en/moreinfo.php?pk=1', source: 'rockauto.com' };
+    const other = { ...cheapest, price: 600, url: 'https://www.rockauto.com/en/moreinfo.php?pk=2' };
+    const searchLinks = [{ source: 'rockauto.com', url: 'https://www.rockauto.com/en/catalog/bmw,2015,328i' }];
     const offers = {
       'Front Bumper': { offer: { cheapest, alternatives: [other] }, similar: [], searchLinks },
       Doors: { offer: { cheapest, alternatives: [] }, similar: [], searchLinks },
     };
     const c = estimateCost([item('Front Bumper', 'Dent', 'High'), item('Doors', 'Dent', 'Medium')], 'BMW', offers);
-    expect(c.lines[0]).toMatchObject({ parts: 417.61, partsBasis: 'listing', partListing: cheapest, alternatives: [other], searchLinks, total: 1982.61 });
+    expect(c.lines[0]).toMatchObject({ parts: 417.61, partsBasis: 'listing', partListing: cheapest, alternatives: [other], searchLinks, total: 1342.61 });
     // A repaired part needs no replacement part, so a listing is not charged.
     expect(c.lines[1]).toMatchObject({ parts: 0, partsBasis: 'none', partListing: null });
   });
 
   it('keeps reference listings and search links on a line that had to be estimated', () => {
-    const similar = [{ title: 'Ön bamper Mazda', price: 500, url: 'https://www.avtopro.az/products/m-1', source: 'avtopro.az' }];
-    const searchLinks = [{ source: 'avtopro.az', url: 'https://www.avtopro.az/products?search=bamper%20lada' }];
+    const similar = [{ title: 'Bumper cover for another vehicle', price: 500, url: 'https://www.rockauto.com/en/moreinfo.php?pk=9', source: 'rockauto.com' }];
+    const searchLinks = [{ source: 'rockauto.com', url: 'https://www.rockauto.com/en/catalog/lada' }];
     const c = estimateCost([item('Front Bumper', 'Dent', 'High')], 'Lada', { 'Front Bumper': { offer: null, similar, searchLinks } });
-    expect(c.lines[0]).toMatchObject({ partsBasis: 'estimate', partListing: null, similarListings: similar, searchLinks, parts: 994.5 });
+    expect(c.lines[0]).toMatchObject({ partsBasis: 'estimate', partListing: null, similarListings: similar, searchLinks, parts: 585 });
   });
 
   it('charges a part and its paint once when the same part has two kinds of damage', () => {
     const c = estimateCost([item('Fenders', 'Severe Deformation', 'High'), item('Fenders', 'Paint Damage', 'Low')], 'Toyota');
-    expect(c.lines[0]).toMatchObject({ operation: 'Replace', parts: 646, paint: 765, partsBasis: 'estimate' });
+    expect(c.lines[0]).toMatchObject({ operation: 'Replace', parts: 380, paint: 450, partsBasis: 'estimate' });
     expect(c.lines[1]).toMatchObject({ operation: 'Repair', parts: 0, paint: 0, laborHours: 1.5 });
 
     const two = estimateCost([item('Headlights', 'Severe Deformation', 'High'), item('Headlights', 'Broken Glass', 'High')], 'Toyota');
-    expect(two.lines.map((l) => l.parts)).toEqual([595, 0]);
+    expect(two.lines.map((l) => l.parts)).toEqual([350, 0]);
     expect(two.lines[1].partsBasis).toBe('included');
-    expect(two.partsTotal).toBe(595);
+    expect(two.partsTotal).toBe(350);
   });
 
   it('matches make names loosely', () => {
@@ -177,9 +177,9 @@ describe('fraud', () => {
     expect(f.signals.filter((s) => s.kind === 'vehicle_mismatch')).toHaveLength(1);
   });
 
-  it('flags totals above 20,400 AZN only', () => {
-    expect(assessFraud({ ...base, photos: [photo('p1')], totalCost: 20400 }).score).toBe(0);
-    expect(assessFraud({ ...base, photos: [photo('p1')], totalCost: 20400.01 }).score).toBe(10);
+  it('flags totals above $12,000 only', () => {
+    expect(assessFraud({ ...base, photos: [photo('p1')], totalCost: 12000 }).score).toBe(0);
+    expect(assessFraud({ ...base, photos: [photo('p1')], totalCost: 12000.01 }).score).toBe(10);
   });
 
   it('reports missing EXIF as a note without scoring it', () => {
@@ -204,8 +204,8 @@ describe('recommendation', () => {
   it('requires manual review at each threshold', () => {
     expect(recommend({ ...ok, fraudScore: 60 }).action).toBe('Manual Adjuster Review Required');
     expect(recommend({ ...ok, severityScore: 60 }).action).toBe('Manual Adjuster Review Required');
-    expect(recommend({ ...ok, totalCost: 13600 }).action).toBe('Standard review');
-    expect(recommend({ ...ok, totalCost: 13600.01 }).action).toBe('Manual Adjuster Review Required');
+    expect(recommend({ ...ok, totalCost: 8000 }).action).toBe('Standard review');
+    expect(recommend({ ...ok, totalCost: 8000.01 }).action).toBe('Manual Adjuster Review Required');
     const gap = { ...fullCoverage, complete: false, parts: { ...fullCoverage.parts, Hood: false } };
     const r = recommend({ ...ok, coverage: gap });
     expect(r.action).toBe('Manual Adjuster Review Required');
@@ -213,8 +213,8 @@ describe('recommendation', () => {
   });
 
   it('falls back to standard review and says why', () => {
-    expect(recommend({ ...ok, totalCost: 4249.99 }).action).toBe('Fast-track approval');
-    const r = recommend({ ...ok, totalCost: 4250 });
+    expect(recommend({ ...ok, totalCost: 2499.99 }).action).toBe('Fast-track approval');
+    const r = recommend({ ...ok, totalCost: 2500 });
     expect(r.action).toBe('Standard review');
     expect(r.reasons.length).toBeGreaterThan(0);
     expect(recommend({ ...ok, fraudScore: 30 }).action).toBe('Standard review');

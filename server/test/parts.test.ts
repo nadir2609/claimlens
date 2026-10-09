@@ -2,185 +2,143 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
-import type { DamageItem, PartListing, VehicleInfo } from '@claimlens/shared';
-import { PartPriceLookup, findOffers, searchUrls, type PageFetcher } from '../src/parts/lookup';
-import { selectOffer, selectSimilar } from '../src/parts/match';
-import { parseAvtopro, parseEhtiyat } from '../src/parts/parsers';
+import type { DamageItem, VehicleInfo } from '@claimlens/shared';
+import { FirecrawlFetcher, RockAutoLookup, findOffers, type PageFetcher } from '../src/parts/lookup';
+import { firstYear, parseListings } from '../src/parts/rockauto';
 import { ClaimStore } from '../src/store';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const fixture = (name: string) => readFileSync(join(here, 'fixtures', name), 'utf8');
-const mazda: VehicleInfo = { make: 'Mazda', model: 'CX-7', year: '2010', bodyType: 'SUV', confidence: 0.9 };
-const listing = (title: string, price: number, source = 'avtopro.az'): PartListing =>
-  ({ title, price, url: `https://example.test/${encodeURIComponent(title)}-${price}`, source });
+const listingPage = readFileSync(join(here, 'fixtures', 'rockauto-bumper-cover.html'), 'utf8');
 
-describe('listing parsers', () => {
-  it('reads title, price and link from an avtopro.az results page', () => {
-    const items = parseAvtopro(fixture('avtopro-bamper-mazda.md'));
-    expect(items).toHaveLength(7);
-    expect(items[0]).toEqual({
-      title: 'Ön bamper Mazda CX-7', price: 417.61, source: 'avtopro.az',
-      url: 'https://www.avtopro.az/products/on-bamper-mazda-cx-7-207408',
+const BASE = 'https://www.rockauto.com/en/catalog';
+const MODEL = `${BASE}/toyota,2012,camry`;
+const ENGINE = `${MODEL},2.5l+l4,1502610`;
+const CATEGORY = `${ENGINE},body+&+lamp+assembly`;
+const BUMPER = `${CATEGORY},bumper+cover,1344`;
+const HOOD = `${CATEGORY},hood,1396`;
+// Page HTML escapes "&" in links, as the real site does.
+const links = (...urls: string[]) => urls.map((u) => `<a href="${u.replace(/&/g, '&amp;')}">x</a>`).join('\n');
+
+const camry: VehicleInfo = { make: 'Toyota', model: 'Camry', year: '2012', bodyType: 'Sedan', confidence: 0.9 };
+
+function site(overrides: Record<string, string | Error> = {}) {
+  const pages: Record<string, string | Error> = {
+    [MODEL]: links(`${BASE}/toyota,2012`, ENGINE, `${MODEL},3.5l+v6,1502609`),
+    [CATEGORY]: links(BUMPER, `${CATEGORY},bumper+bracket,12236`, HOOD, `${CATEGORY},hood+hinge,813`, `${CATEGORY},headlamp+assembly,10762`, `${CATEGORY},fender,1380`),
+    [BUMPER]: listingPage,
+    ...overrides,
+  };
+  const html = vi.fn(async (url: string) => {
+    const page = pages[url] ?? '';
+    if (page instanceof Error) throw page;
+    return page;
+  });
+  return { fetcher: { html } satisfies PageFetcher, html };
+}
+
+describe('RockAuto page parsing', () => {
+  it('reads manufacturer, part number, fitment note, price and link from a listing page', () => {
+    const items = parseListings(listingPage);
+    expect(items).toHaveLength(8);
+    expect(items[0]).toMatchObject({ manufacturer: 'VARIOUS MFR', partNumber: 'TO1100296', description: 'Primed (Customer Paints to Match)', price: 51.79 });
+    expect(items[0].note).toMatch(/^Rear; /);
+    expect(items[0].infoUrl).toBe('https://www.rockauto.com/en/moreinfo.php?pk=3660768&cc=1502610&pt=1344');
+    expect(items.every((i) => i.price > 0)).toBe(true);
+  });
+
+  it('returns nothing for a page without listings', () => {
+    expect(parseListings('<html><body>No parts</body></html>')).toEqual([]);
+  });
+
+  it('takes the first year from a single year or a range', () => {
+    expect(firstYear('2012')).toBe('2012');
+    expect(firstYear('2019-2022')).toBe('2019');
+    expect(firstYear('Unknown')).toBeNull();
+  });
+});
+
+describe('RockAutoLookup', () => {
+  it('walks model, engine and category pages and returns the cheapest front bumper with a link', async () => {
+    const { fetcher, html } = site();
+    const found = await new RockAutoLookup(fetcher, new ClaimStore(':memory:')).find('Front Bumper', camry);
+
+    expect(html.mock.calls.map(([u]) => u)).toEqual([MODEL, CATEGORY, BUMPER]);
+    expect(found!.offer!.cheapest).toMatchObject({
+      title: 'VARIOUS MFR TO1000378, Primed (Customer Paints to Match) (Front; L Model or LE Model or XLE Model)',
+      price: 71.79, source: 'rockauto.com',
     });
-    expect(items.every((i) => i.price > 0 && i.url.startsWith('https://www.avtopro.az/products/'))).toBe(true);
+    expect(found!.offer!.cheapest.url).toMatch(/^https:\/\/www\.rockauto\.com\/en\/moreinfo\.php\?pk=\d+&cc=1502610&pt=1344$/);
+    expect(found!.offer!.alternatives.map((a) => a.price)).toEqual([74.79, 159.89, 212.99]);
+    expect(found!.searchLinks).toEqual([{ source: 'rockauto.com', url: BUMPER }]);
   });
 
-  it('reads title, price and link from an ehtiyathisseleri.az results page', () => {
-    const items = parseEhtiyat(fixture('ehtiyat-bamper.md'));
-    expect(items.length).toBeGreaterThan(5);
-    const sonata = items.find((i) => i.title === 'Hyundai Sonata ön buferi')!;
-    expect(sonata).toMatchObject({ source: 'ehtiyathisseleri.az', url: 'https://ehtiyathisseleri.az/hyundai-sonata-on-buferi-665.html' });
-    expect(sonata.price).toBeGreaterThan(0);
-    const rio = items.find((i) => i.title.startsWith('Kia Rio 2018-2020'))!;
-    expect(rio.price).toBe(99);
-    expect(new Set(items.map((i) => i.url)).size).toBe(items.length);
+  it('separates rear from front, and reuses cached pages for the second part', async () => {
+    const { fetcher, html } = site();
+    const lookup = new RockAutoLookup(fetcher, new ClaimStore(':memory:'));
+    await lookup.find('Front Bumper', camry);
+    const rear = await lookup.find('Rear Bumper', camry);
+    expect(rear!.offer!.cheapest.price).toBe(51.79);
+    expect(rear!.offer!.cheapest.title).toContain('Rear;');
+    expect(html).toHaveBeenCalledTimes(3);
   });
 
-  it('returns nothing for a page with no listings', () => {
-    expect(parseAvtopro('# Nothing here')).toEqual([]);
-    expect(parseEhtiyat('Sizin sorğunuza uyğun nəticə tapılmadı.')).toEqual([]);
-  });
-});
-
-describe('selectOffer', () => {
-  it('picks the cheapest listing for the right part, side and make', () => {
-    const offer = selectOffer(parseAvtopro(fixture('avtopro-bamper-mazda.md')), 'Front Bumper', { ...mazda, model: 'Unknown' });
-    expect(offer!.cheapest.title).toBe('Ön bamper Mazda CX-7');
-    expect(offer!.cheapest.price).toBe(417.61);
-    expect(offer!.alternatives.map((a) => a.price)).toEqual([514.55, 587.26]);
-  });
-
-  it('prefers listings that name the model when any do', () => {
-    const offer = selectOffer(parseAvtopro(fixture('avtopro-bamper-mazda.md')), 'Front Bumper', { ...mazda, model: 'CX-9' });
-    expect(offer!.cheapest.title).toBe('Ön bamper Mazda CX-9');
-    expect(offer!.alternatives).toEqual([]);
-  });
-
-  it('keeps rear bumpers out of a front bumper search and the other way round', () => {
-    const rear = selectOffer(parseAvtopro(fixture('avtopro-bamper-mazda.md')), 'Rear Bumper', { ...mazda, model: 'Unknown' });
-    expect(rear!.cheapest.price).toBe(107.04);
-    expect([rear!.cheapest, ...rear!.alternatives].every((l) => l.title.startsWith('Arxa'))).toBe(true);
-  });
-
-  it('ignores brackets, trims and other accessories that mention the part', () => {
-    const offer = selectOffer([
-      listing('Bamper bərkidicisi ön Mazda', 23),
-      listing('Bamper kantı ön sağ Mazda', 25),
-      listing('Mazda Büfer Ablicovka', 30),
-      listing('Ön bamper Mazda', 500),
-    ], 'Front Bumper', mazda);
-    expect(offer!.cheapest.price).toBe(500);
-    expect(offer!.alternatives).toEqual([]);
-  });
-
-  it('ignores other makes, listings with no make, and implausibly cheap prices', () => {
-    expect(selectOffer([listing('Ön bamper Toyota', 300), listing('Ön bamper', 200), listing('Ön bamper Mazda', 1)], 'Front Bumper', mazda)).toBeNull();
-  });
-
-  it('understands seller spellings: "bufer" for bumper, and a listing covering both sides', () => {
-    const hyundai = { ...mazda, make: 'Hyundai', model: 'Sonata' };
-    const items = [listing('Hyundai Sonata ön buferi', 150, 'ehtiyathisseleri.az'), listing('Hyundai, Kia ön və arxa buferləri', 200, 'ehtiyathisseleri.az')];
-    expect(selectOffer(items, 'Front Bumper', hyundai)!.cheapest.price).toBe(150);
-    expect(selectOffer(items, 'Rear Bumper', hyundai)!.cheapest.price).toBe(200);
-  });
-
-  it('matches doors but not door glass or the boot lid, and matches common make spellings', () => {
-    const merc = { ...mazda, make: 'Mercedes-Benz', model: 'Unknown' };
-    const offer = selectOffer([
-      listing('Qapı şüşəsi arxa Mercedes', 80), listing('Baqaj qapısı Mercedes', 90), listing('Qapı arxa sağ Mersedes', 900),
-    ], 'Doors', merc);
-    expect(offer!.cheapest.price).toBe(900);
-  });
-
-  it('ignores covers and linings in their inflected spellings', () => {
-    const merc = { ...mazda, make: 'Mercedes-Benz', model: 'Unknown' };
-    expect(selectOffer([listing('Mercedes W213 2016-22 kapot üzlüyü', 70), listing('Mercedes kapot örtüyü', 60)], 'Hood', merc)).toBeNull();
-  });
-
-  it('recognises a Lada listed as VAZ', () => {
-    const lada = { ...mazda, make: 'Lada', model: 'Samara' };
-    expect(selectOffer([listing('VAZ 2109 ön bamper', 80)], 'Front Bumper', lada)!.cheapest.price).toBe(80);
-  });
-
-  it('offers the same part for other vehicles as a reference when asked, cheapest first, at most three', () => {
-    const similar = selectSimilar([
-      listing('Ön bamper Toyota', 300), listing('Bamper bərkidicisi ön', 10), listing('Arxa bamper Kia', 90),
-      listing('Hyundai Sonata ön buferi', 145), listing('Ön bamper Mazda', 500), listing('Ön bamper BMW', 900),
-    ], 'Front Bumper');
-    expect(similar.map((l) => l.price)).toEqual([145, 300, 500]);
-  });
-
-  it('returns null for an unknown make', () => {
-    expect(selectOffer([listing('Ön bamper Mazda', 500)], 'Front Bumper', { ...mazda, make: 'Unknown' })).toBeNull();
-  });
-});
-
-describe('PartPriceLookup', () => {
-  const pages: Record<string, string> = {};
-  const [avtoproUrl, ehtiyatUrl] = searchUrls('Front Bumper', 'Mazda');
-  pages[avtoproUrl] = fixture('avtopro-bamper-mazda.md');
-  pages[ehtiyatUrl] = fixture('ehtiyat-bamper.md');
-  const fetcher = (): PageFetcher & { markdown: ReturnType<typeof vi.fn> } =>
-    ({ markdown: vi.fn(async (url: string) => pages[url] ?? '') });
-
-  it('builds search URLs that include the part and the make', () => {
-    expect(avtoproUrl).toBe('https://www.avtopro.az/products?search=bamper%20Mazda');
-    expect(ehtiyatUrl).toBe('https://ehtiyathisseleri.az/search/?query=bamper%20Mazda');
-  });
-
-  it('searches with the spelling sellers use for the make', () => {
-    expect(searchUrls('Hood', 'Mercedes-Benz')[0]).toBe('https://www.avtopro.az/products?search=kapot%20mercedes');
-  });
-
-  it('searches both sites and returns the cheapest match across them', async () => {
-    const f = fetcher();
-    const lookup = new PartPriceLookup(f, new ClaimStore(':memory:'));
-    const found = await lookup.find('Front Bumper', { ...mazda, model: 'Unknown' });
-    expect(f.markdown).toHaveBeenCalledTimes(2);
-    expect(found!.offer!.cheapest).toMatchObject({ price: 417.61, source: 'avtopro.az' });
-    expect(found!.searchLinks).toEqual([
-      { source: 'avtopro.az', url: avtoproUrl }, { source: 'ehtiyathisseleri.az', url: ehtiyatUrl },
-    ]);
-  });
-
-  it('when nothing is listed for the make, returns no offer but links the same part for other vehicles', async () => {
-    const f = fetcher();
-    f.markdown.mockImplementation(async (url: string) => (url.includes('avtopro') ? fixture('avtopro-bamper-mazda.md') : ''));
-    const found = await new PartPriceLookup(f, new ClaimStore(':memory:')).find('Front Bumper', { ...mazda, make: 'Lada', model: 'Samara' });
-    expect(found!.offer).toBeNull();
-    expect(found!.similar.map((l) => l.title)).toEqual(['Ön bamper Mazda CX-7', 'Ön bamper Mazda', 'Ön bamper Mazda CX-9']);
-    expect(found!.searchLinks[0].url).toBe('https://www.avtopro.az/products?search=bamper%20lada');
-  });
-
-  it('serves repeat lookups from the cache, and refetches after 24 hours', async () => {
+  it('refetches after 24 hours', async () => {
     let now = 1_000_000;
-    const f = fetcher();
-    const lookup = new PartPriceLookup(f, new ClaimStore(':memory:'), () => now);
-    await lookup.find('Front Bumper', mazda);
-    await lookup.find('Rear Bumper', mazda);
-    expect(f.markdown).toHaveBeenCalledTimes(2);
+    const { fetcher, html } = site();
+    const lookup = new RockAutoLookup(fetcher, new ClaimStore(':memory:'), () => now);
+    await lookup.find('Front Bumper', camry);
     now += 24 * 3600 * 1000 + 1;
-    await lookup.find('Front Bumper', mazda);
-    expect(f.markdown).toHaveBeenCalledTimes(4);
+    await lookup.find('Front Bumper', camry);
+    expect(html).toHaveBeenCalledTimes(6);
   });
 
-  it('still answers from one site when the other fails, and does not cache the failure', async () => {
-    const f = fetcher();
-    f.markdown.mockImplementation(async (url: string) => {
-      if (url === ehtiyatUrl) throw new Error('timeout');
-      return pages[url];
-    });
-    const lookup = new PartPriceLookup(f, new ClaimStore(':memory:'));
-    expect((await lookup.find('Front Bumper', mazda))!.offer!.cheapest.price).toBe(417.61);
-    await lookup.find('Front Bumper', mazda);
-    expect(f.markdown.mock.calls.filter(([u]) => u === ehtiyatUrl)).toHaveLength(2);
-    expect(f.markdown.mock.calls.filter(([u]) => u === avtoproUrl)).toHaveLength(1);
+  it('uses the first year of a range', async () => {
+    const { fetcher } = site();
+    const found = await new RockAutoLookup(fetcher, new ClaimStore(':memory:')).find('Front Bumper', { ...camry, year: '2012-2014' });
+    expect(found!.offer!.cheapest.price).toBe(71.79);
   });
 
-  it('does not search at all when the make is unknown', async () => {
-    const f = fetcher();
-    expect(await new PartPriceLookup(f, new ClaimStore(':memory:')).find('Hood', { ...mazda, make: 'Unknown' })).toBeNull();
-    expect(f.markdown).not.toHaveBeenCalled();
+  it('finds the model on the year page when the name does not match the catalog exactly', async () => {
+    const { fetcher, html } = site({ [`${BASE}/toyota,2012`]: links(`${BASE}/toyota,2012,corolla`, MODEL, `${BASE}/toyota,2012,camry+hybrid`) });
+    const found = await new RockAutoLookup(fetcher, new ClaimStore(':memory:')).find('Front Bumper', { ...camry, model: 'Camry LE' });
+    expect(found!.offer!.cheapest.price).toBe(71.79);
+    expect(html.mock.calls.map(([u]) => u).slice(0, 3)).toEqual([`${BASE}/toyota,2012,camry+le`, `${BASE}/toyota,2012`, MODEL]);
+  });
+
+  it('gives the part page link but no offer when that page has no listings', async () => {
+    const { fetcher } = site();
+    const found = await new RockAutoLookup(fetcher, new ClaimStore(':memory:')).find('Hood', camry);
+    expect(found).toEqual({ offer: null, similar: [], searchLinks: [{ source: 'rockauto.com', url: HOOD }] });
+  });
+
+  it('links the body category when the catalog has no such part type for the vehicle', async () => {
+    const { fetcher } = site();
+    const found = await new RockAutoLookup(fetcher, new ClaimStore(':memory:')).find('Windshield', camry);
+    expect(found).toEqual({ offer: null, similar: [], searchLinks: [{ source: 'rockauto.com', url: CATEGORY }] });
+  });
+
+  it('does not confuse a part with its accessories (hood is not hood hinge)', async () => {
+    const { fetcher, html } = site();
+    await new RockAutoLookup(fetcher, new ClaimStore(':memory:')).find('Hood', camry);
+    expect(html.mock.calls.at(-1)![0]).toBe(HOOD);
+  });
+
+  it('returns null without searching when the make or year is unknown, and when the vehicle is not in the catalog', async () => {
+    const { fetcher, html } = site();
+    const lookup = new RockAutoLookup(fetcher, new ClaimStore(':memory:'));
+    expect(await lookup.find('Hood', { ...camry, make: 'Unknown' })).toBeNull();
+    expect(await lookup.find('Hood', { ...camry, year: 'Unknown' })).toBeNull();
+    expect(html).not.toHaveBeenCalled();
+    expect(await lookup.find('Hood', { ...camry, make: 'Lada', model: 'Samara', year: '1995' })).toBeNull();
+  });
+
+  it('does not cache a failed page, so the next lookup tries again', async () => {
+    const { fetcher, html } = site({ [BUMPER]: new Error('timeout') });
+    const lookup = new RockAutoLookup(fetcher, new ClaimStore(':memory:'));
+    expect((await lookup.find('Front Bumper', camry))!.offer).toBeNull();
+    await lookup.find('Front Bumper', camry);
+    expect(html.mock.calls.filter(([u]) => u === BUMPER)).toHaveLength(2);
+    expect(html.mock.calls.filter(([u]) => u === MODEL)).toHaveLength(1);
   });
 });
 
@@ -191,10 +149,42 @@ describe('findOffers', () => {
   it('looks up only parts that will be replaced, once each, and survives a failing lookup', async () => {
     const find = vi.fn(async (part: string) => {
       if (part === 'Hood') throw new Error('boom');
-      return { offer: { cheapest: listing(`${part} Mazda`, 100), alternatives: [] }, similar: [], searchLinks: [] };
+      return { offer: null, similar: [], searchLinks: [{ source: 'rockauto.com', url: `https://example.test/${part}` }] };
     });
-    const offers = await findOffers({ find }, [item('Front Bumper', 'High'), item('Front Bumper', 'High'), item('Hood', 'High'), item('Doors', 'Low')], mazda);
+    const offers = await findOffers({ find }, [item('Front Bumper', 'High'), item('Front Bumper', 'High'), item('Hood', 'High'), item('Doors', 'Low')], camry);
     expect(find.mock.calls.map(([p]) => p)).toEqual(['Front Bumper', 'Hood']);
     expect(Object.keys(offers)).toEqual(['Front Bumper']);
+  });
+});
+
+describe('FirecrawlFetcher', () => {
+  const reply = (status: number, body: object = {}) => new Response(JSON.stringify(body), { status });
+
+  it('waits and retries when Firecrawl rate-limits the request', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(reply(429))
+      .mockResolvedValueOnce(reply(200, { data: { rawHtml: '<html>ok</html>' } }));
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      expect(await new FirecrawlFetcher('key', 0).html('https://www.rockauto.com/en/catalog/toyota')).toBe('<html>ok</html>');
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('gives up after repeated rate limits, and does not retry other errors', async () => {
+    const limited = vi.fn().mockResolvedValue(reply(429));
+    vi.stubGlobal('fetch', limited);
+    try {
+      await expect(new FirecrawlFetcher('key', 0).html('https://x.test')).rejects.toThrow(/429/);
+      expect(limited).toHaveBeenCalledTimes(3);
+      const broken = vi.fn().mockResolvedValue(reply(500));
+      vi.stubGlobal('fetch', broken);
+      await expect(new FirecrawlFetcher('key', 0).html('https://x.test')).rejects.toThrow(/500/);
+      expect(broken).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });

@@ -118,7 +118,7 @@ function PartSource({ line }: { line: CostLine }) {
           <span className="muted">({line.partListing.source})</span>
         </div>
       ) : (
-        <div className="muted">Estimated price: nothing is listed for this make</div>
+        <div className="muted">Estimated price: no listing found for this vehicle</div>
       )}
       {alternatives.length > 0 && (
         <details>
@@ -205,11 +205,11 @@ export function CostTable({ cost }: { cost: CostEstimate }) {
         </div>
       )}
       <p className="muted small">
-        Parts are charged only when an item is replaced, once per part. Where a listing for this make was found on
-        avtopro.az or ehtiyathisseleri.az, the cheapest one is used and linked; check it fits the vehicle before relying
-        on it. Otherwise the part price is an estimate from a fixed table at the {cost.makeTier} make tier
-        (×{cost.tierMultiplier.toFixed(1)}), and listings for other vehicles are shown for reference only.
-        Labour ({money(cost.laborRate)} per hour) and paint are placeholder rates.
+        Parts are charged only when an item is replaced, once per part. Where RockAuto lists the part for this vehicle,
+        the cheapest listing is used and linked; check its fitment note (trim, body style) before relying on it. Otherwise
+        the part price is an estimate from a fixed table at the {cost.makeTier} make tier
+        (×{cost.tierMultiplier.toFixed(1)}). Labour ({money(cost.laborRate)} per hour) and paint are placeholder rates.
+        Prices exclude shipping and tax.
       </p>
     </section>
   );

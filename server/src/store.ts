@@ -1,5 +1,5 @@
 import { DatabaseSync } from 'node:sqlite';
-import type { ClaimReport, ClaimStatus, ClaimSummary, PartListing } from '@claimlens/shared';
+import type { ClaimReport, ClaimStatus, ClaimSummary } from '@claimlens/shared';
 import type { PriorHash } from './pipeline/fraud';
 
 const vehicleLabel = (r: ClaimReport) =>
@@ -101,18 +101,18 @@ export class ClaimStore {
     return rows.length;
   }
 
-  /** Cached marketplace search results, keyed by the search URL. */
-  getListings(key: string): { fetchedAt: number; listings: PartListing[] } | null {
+  /** Cached catalog pages (parsed), keyed by URL. */
+  getCache<T>(key: string): { fetchedAt: number; value: T } | null {
     const row = this.db.prepare('SELECT fetched_at AS fetchedAt, listings FROM part_price_cache WHERE key = ?').get(key) as
       { fetchedAt: number; listings: string } | undefined;
-    return row ? { fetchedAt: row.fetchedAt, listings: JSON.parse(row.listings) as PartListing[] } : null;
+    return row ? { fetchedAt: row.fetchedAt, value: JSON.parse(row.listings) as T } : null;
   }
 
-  setListings(key: string, listings: PartListing[], fetchedAt: number): void {
+  setCache(key: string, value: unknown, fetchedAt: number): void {
     this.db.prepare(
       'INSERT INTO part_price_cache (key, fetched_at, listings) VALUES (?, ?, ?) ' +
       'ON CONFLICT(key) DO UPDATE SET fetched_at = excluded.fetched_at, listings = excluded.listings',
-    ).run(key, fetchedAt, JSON.stringify(listings));
+    ).run(key, fetchedAt, JSON.stringify(value));
   }
 
   close(): void { this.db.close(); }

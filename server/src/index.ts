@@ -3,7 +3,7 @@ import { createAnalyzer } from './analyzers';
 import { createApp } from './app';
 import { config } from './config';
 import { EventBus } from './events';
-import { FirecrawlFetcher, PartPriceLookup } from './parts/lookup';
+import { FirecrawlFetcher, RockAutoLookup } from './parts/lookup';
 import { ClaimStore } from './store';
 
 const analyzer = createAnalyzer(config);
@@ -19,9 +19,9 @@ const app = createApp({
   // Demo analysis is instant; pace the stages so the progress view is readable.
   stageDelayMs: analyzer.mode === 'demo' ? 450 : 0,
   clientDist: config.clientDist,
-  partLookup: config.firecrawlApiKey ? new PartPriceLookup(new FirecrawlFetcher(config.firecrawlApiKey), store) : undefined,
+  partLookup: config.firecrawlApiKey ? new RockAutoLookup(new FirecrawlFetcher(config.firecrawlApiKey), store) : undefined,
 });
 
 app.listen(config.port, () => {
-  console.log(`ClaimLens API on http://localhost:${config.port} (analysis mode: ${analyzer.mode}, part prices: ${config.firecrawlApiKey ? 'live from avtopro.az and ehtiyathisseleri.az' : 'fallback table'})`);
+  console.log(`ClaimLens API on http://localhost:${config.port} (analysis mode: ${analyzer.mode}, part prices: ${config.firecrawlApiKey ? 'live from rockauto.com' : 'fallback table'})`);
 });

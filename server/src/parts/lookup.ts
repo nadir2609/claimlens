@@ -1,16 +1,18 @@
-import type { DamageItem, Part, PartListing, PartSearchResult, VehicleInfo } from '@claimlens/shared';
+import type { DamageItem, Part, PartSearchResult, VehicleInfo } from '@claimlens/shared';
 import { needsReplacement } from '../pipeline/cost';
-import { PART_RULES, searchMake, selectOffer, selectSimilar } from './match';
-import { parseAvtopro, parseEhtiyat } from './parsers';
+import {
+  BODY_CATEGORY, CATALOG, PART_TYPES, SOURCE, childLinks, firstYear, matchModel, parseListings, selectListing, slug,
+  type RockListing,
+} from './rockauto';
 
-/** Returns a page as markdown. The real implementation is Firecrawl; tests substitute a fake. */
+/** Returns a page's HTML. The real implementation is Firecrawl; tests substitute a fake. */
 export interface PageFetcher {
-  markdown(url: string): Promise<string>;
+  html(url: string): Promise<string>;
 }
 
-export interface PriceCache {
-  getListings(key: string): { fetchedAt: number; listings: PartListing[] } | null;
-  setListings(key: string, listings: PartListing[], fetchedAt: number): void;
+export interface LookupCache {
+  getCache<T>(key: string): { fetchedAt: number; value: T } | null;
+  setCache(key: string, value: unknown, fetchedAt: number): void;
 }
 
 export interface PartLookup {
@@ -18,62 +20,84 @@ export interface PartLookup {
 }
 
 const CACHE_MS = 24 * 60 * 60 * 1000;
-
-/** The search-result pages to read for a part and make: [avtopro.az, ehtiyathisseleri.az]. */
-export function searchUrls(part: Part, make: string): [string, string] {
-  const query = encodeURIComponent(`${PART_RULES[part].query} ${searchMake(make)}`);
-  return [`https://www.avtopro.az/products?search=${query}`, `https://ehtiyathisseleri.az/search/?query=${query}`];
-}
+const known = (value: string) => value.trim() !== '' && value.trim().toLowerCase() !== 'unknown';
 
 export class FirecrawlFetcher implements PageFetcher {
-  constructor(private readonly apiKey: string) {}
+  /** `retryDelayMs` is how long to wait after a rate-limit response; the free plan allows few requests per minute. */
+  constructor(private readonly apiKey: string, private readonly retryDelayMs = 20_000) {}
 
-  async markdown(url: string): Promise<string> {
-    const res = await fetch('https://api.firecrawl.dev/v2/scrape', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${this.apiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url, formats: ['markdown'], onlyMainContent: false }),
-      signal: AbortSignal.timeout(60_000),
-    });
+  async html(url: string): Promise<string> {
+    let res: Response;
+    for (let attempt = 1; ; attempt++) {
+      res = await fetch('https://api.firecrawl.dev/v2/scrape', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${this.apiKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url, formats: ['rawHtml'], onlyMainContent: false }),
+        signal: AbortSignal.timeout(90_000),
+      });
+      if (res.status !== 429 || attempt === 3) break;
+      await new Promise((resolve) => setTimeout(resolve, this.retryDelayMs));
+    }
     if (!res.ok) throw new Error(`Firecrawl returned ${res.status} for ${url}`);
-    const body = (await res.json()) as { data?: { markdown?: string } };
-    return body.data?.markdown ?? '';
+    const body = (await res.json()) as { data?: { rawHtml?: string } };
+    return body.data?.rawHtml ?? '';
   }
 }
 
-/** Finds the cheapest marketplace listing for a part, caching each search page for 24 hours. */
-export class PartPriceLookup implements PartLookup {
+/**
+ * Finds the cheapest RockAuto listing for a part of a specific vehicle by walking the catalog:
+ * model page -> first engine -> body category -> part type page. Every page read is cached for 24 hours.
+ */
+export class RockAutoLookup implements PartLookup {
   constructor(
     private readonly fetcher: PageFetcher,
-    private readonly cache: PriceCache,
+    private readonly cache: LookupCache,
     private readonly now: () => number = Date.now,
   ) {}
 
   async find(part: Part, vehicle: VehicleInfo): Promise<PartSearchResult | null> {
-    const make = vehicle.make.trim();
-    if (!make || make.toLowerCase() === 'unknown') return null;
-    const [avtopro, ehtiyat] = searchUrls(part, make);
-    const pages = await Promise.all([this.listings(avtopro, parseAvtopro), this.listings(ehtiyat, parseEhtiyat)]);
-    const all = pages.flat();
-    const offer = selectOffer(all, part, vehicle);
-    return {
-      offer,
-      similar: offer ? [] : selectSimilar(all, part),
-      searchLinks: [{ source: 'avtopro.az', url: avtopro }, { source: 'ehtiyathisseleri.az', url: ehtiyat }],
-    };
+    const year = firstYear(vehicle.year);
+    if (!known(vehicle.make) || !known(vehicle.model) || !year) return null;
+
+    const engine = await this.engineUrl(slug(vehicle.make), year, vehicle.model);
+    if (!engine) return null;
+
+    const category = `${engine},${BODY_CATEGORY}`;
+    const partTypes = await this.read(category, (html) => childLinks(html, category, 2)) ?? [];
+    const page = PART_TYPES[part].names
+      .map((name) => partTypes.find((url) => url.startsWith(`${category},${name},`)))
+      .find((url) => url !== undefined);
+    if (!page) return { offer: null, similar: [], searchLinks: [{ source: SOURCE, url: category }] };
+
+    const listings = await this.read<RockListing[]>(page, parseListings) ?? [];
+    return { offer: selectListing(listings, part, page), similar: [], searchLinks: [{ source: SOURCE, url: page }] };
   }
 
-  private async listings(url: string, parse: (markdown: string) => PartListing[]): Promise<PartListing[]> {
-    const cached = this.cache.getListings(url);
-    if (cached && this.now() - cached.fetchedAt <= CACHE_MS) return cached.listings;
+  /** The catalog page for the vehicle's first listed engine; body parts are the same across engines. */
+  private async engineUrl(make: string, year: string, model: string): Promise<string | null> {
+    const direct = `${CATALOG}/${make},${year},${slug(model)}`;
+    const engines = await this.read(direct, (html) => childLinks(html, direct, 2)) ?? [];
+    if (engines.length) return engines[0];
+
+    // The catalog may name the model differently ("Camry LE" is listed as "camry"): look it up on the year page.
+    const yearUrl = `${CATALOG}/${make},${year}`;
+    const models = await this.read(yearUrl, (html) => childLinks(html, yearUrl, 1)) ?? [];
+    const matched = matchModel(models, model);
+    if (!matched || matched === direct) return null;
+    return (await this.read(matched, (html) => childLinks(html, matched, 2)) ?? [])[0] ?? null;
+  }
+
+  /** Fetches and parses a page, using the cache when fresh. Returns null on failure, which is not cached. */
+  private async read<T>(url: string, parse: (html: string) => T): Promise<T | null> {
+    const cached = this.cache.getCache<T>(url);
+    if (cached && this.now() - cached.fetchedAt <= CACHE_MS) return cached.value;
     try {
-      const listings = parse(await this.fetcher.markdown(url));
-      this.cache.setListings(url, listings, this.now());
-      return listings;
+      const value = parse(await this.fetcher.html(url));
+      this.cache.setCache(url, value, this.now());
+      return value;
     } catch (err) {
-      // One site being down should not lose the other site's prices; failures are not cached.
-      console.warn(`Part price search failed: ${err instanceof Error ? err.message : err}`);
-      return [];
+      console.warn(`Part price lookup could not read ${url}: ${err instanceof Error ? err.message : err}`);
+      return null;
     }
   }
 }

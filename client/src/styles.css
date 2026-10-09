@@ -221,7 +221,7 @@ img { max-width: 100%; }
 
 .total { font-size: 1.5rem; font-weight: 700; }
 .cost-table td.num, .cost-table th.r { white-space: nowrap; }
-.part-source { margin-top: 0.2rem; max-width: 34ch; line-height: 1.35; }
+.part-source { margin-top: 0.2rem; max-width: 44ch; line-height: 1.35; }
 .part-source ul { margin: 0.25rem 0 0; padding-left: 1rem; }
 .part-source summary { cursor: pointer; color: var(--text-muted); }
 .score-pair { display: inline-flex; align-items: center; gap: 0.5rem; }

@@ -131,7 +131,7 @@ describe('runPipeline', () => {
       })),
       fraudObservations: [],
     }));
-    const cheapest = { title: 'Ön bamper Mazda CX-7', price: 417.61, url: 'https://www.avtopro.az/products/on-bamper-mazda-cx-7-207408', source: 'avtopro.az' };
+    const cheapest = { title: 'TECHPRO MA1000200 (Front)', price: 417.61, url: 'https://www.rockauto.com/en/moreinfo.php?pk=1', source: 'rockauto.com' };
     deps.partLookup = { find: async (part) => (part === 'Front Bumper' ? { offer: { cheapest, alternatives: [] }, similar: [], searchLinks: [] } : null) };
     const id = await addClaim([1, 2, 3, 4]);
     await runPipeline(deps, id);
