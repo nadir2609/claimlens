@@ -96,11 +96,33 @@ describe('cost', () => {
   it('uses the cheapest marketplace listing for a replaced part instead of the estimate', () => {
     const cheapest = { title: 'Ön bamper BMW', price: 417.61, url: 'https://www.avtopro.az/products/x-1', source: 'avtopro.az' };
     const other = { ...cheapest, price: 600, url: 'https://www.avtopro.az/products/x-2' };
-    const offers = { 'Front Bumper': { cheapest, alternatives: [other] }, Doors: { cheapest, alternatives: [] } };
+    const searchLinks = [{ source: 'avtopro.az', url: 'https://www.avtopro.az/products?search=bamper%20BMW' }];
+    const offers = {
+      'Front Bumper': { offer: { cheapest, alternatives: [other] }, similar: [], searchLinks },
+      Doors: { offer: { cheapest, alternatives: [] }, similar: [], searchLinks },
+    };
     const c = estimateCost([item('Front Bumper', 'Dent', 'High'), item('Doors', 'Dent', 'Medium')], 'BMW', offers);
-    expect(c.lines[0]).toMatchObject({ parts: 417.61, partsBasis: 'listing', partListing: cheapest, alternatives: [other], total: 1982.61 });
+    expect(c.lines[0]).toMatchObject({ parts: 417.61, partsBasis: 'listing', partListing: cheapest, alternatives: [other], searchLinks, total: 1982.61 });
     // A repaired part needs no replacement part, so a listing is not charged.
     expect(c.lines[1]).toMatchObject({ parts: 0, partsBasis: 'none', partListing: null });
+  });
+
+  it('keeps reference listings and search links on a line that had to be estimated', () => {
+    const similar = [{ title: 'Ön bamper Mazda', price: 500, url: 'https://www.avtopro.az/products/m-1', source: 'avtopro.az' }];
+    const searchLinks = [{ source: 'avtopro.az', url: 'https://www.avtopro.az/products?search=bamper%20lada' }];
+    const c = estimateCost([item('Front Bumper', 'Dent', 'High')], 'Lada', { 'Front Bumper': { offer: null, similar, searchLinks } });
+    expect(c.lines[0]).toMatchObject({ partsBasis: 'estimate', partListing: null, similarListings: similar, searchLinks, parts: 994.5 });
+  });
+
+  it('charges a part and its paint once when the same part has two kinds of damage', () => {
+    const c = estimateCost([item('Fenders', 'Severe Deformation', 'High'), item('Fenders', 'Paint Damage', 'Low')], 'Toyota');
+    expect(c.lines[0]).toMatchObject({ operation: 'Replace', parts: 646, paint: 765, partsBasis: 'estimate' });
+    expect(c.lines[1]).toMatchObject({ operation: 'Repair', parts: 0, paint: 0, laborHours: 1.5 });
+
+    const two = estimateCost([item('Headlights', 'Severe Deformation', 'High'), item('Headlights', 'Broken Glass', 'High')], 'Toyota');
+    expect(two.lines.map((l) => l.parts)).toEqual([595, 0]);
+    expect(two.lines[1].partsBasis).toBe('included');
+    expect(two.partsTotal).toBe(595);
   });
 
   it('matches make names loosely', () => {

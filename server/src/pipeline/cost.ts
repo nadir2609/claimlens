@@ -1,5 +1,5 @@
 import type {
-  CostEstimate, CostLine, DamageItem, DamageType, Part, PartOffer, Severity,
+  CostEstimate, CostLine, DamageItem, DamageType, Part, PartSearchResult, Severity,
 } from '@claimlens/shared';
 
 // All amounts are in Azerbaijani manat (AZN). Labour, paint and the fallback part prices are placeholder
@@ -49,27 +49,43 @@ export const needsReplacement = (item: Pick<DamageItem, 'severity' | 'type'>): b
   item.severity === 'High' || item.type === 'Broken Glass';
 
 /**
- * Prices each damage item. A replaced part costs the cheapest marketplace listing when `offers` has one for
- * that part; otherwise the fallback table scaled by make tier.
+ * Prices each damage item. A replaced part costs the cheapest marketplace listing when `found` has an offer for
+ * that part; otherwise the fallback table scaled by make tier. A part with several kinds of damage is bought and
+ * painted once: the first line for it (items arrive most severe first) carries those charges.
  */
 export function estimateCost(
-  items: DamageItem[], make: string, offers: Partial<Record<Part, PartOffer>> = {},
+  items: DamageItem[], make: string, found: Partial<Record<Part, PartSearchResult>> = {},
 ): CostEstimate {
   const { tier, multiplier } = makeTier(make);
+  const replaced = new Set<Part>();
+  const painted = new Set<Part>();
+  for (const item of items) if (needsReplacement(item)) replaced.add(item.part);
+  const partCharged = new Set<Part>();
+
   const lines: CostLine[] = items.map((item) => {
     const replace = needsReplacement(item);
-    const offer = replace ? offers[item.part] : undefined;
-    const parts = !replace ? 0 : offer ? round2(offer.cheapest.price) : round2(PART_PRICE[item.part] * multiplier);
-    const paint = UNPAINTED.includes(item.part) ? 0 : PAINT[item.severity];
+    const search = replaced.has(item.part) ? found[item.part] : undefined;
+    const offer = search?.offer ?? null;
+    const chargePart = replace && !partCharged.has(item.part);
+    if (chargePart) partCharged.add(item.part);
+    const parts = !chargePart ? 0 : offer ? round2(offer.cheapest.price) : round2(PART_PRICE[item.part] * multiplier);
+
+    const chargePaint = !UNPAINTED.includes(item.part) && !painted.has(item.part);
+    if (chargePaint) painted.add(item.part);
+    // A panel being replaced is painted at the replacement's rate, whichever of its lines comes first.
+    const paint = chargePaint ? PAINT[replaced.has(item.part) ? 'High' : item.severity] : 0;
+
     const laborHours = LABOR_HOURS[item.type][item.severity];
     const labor = round2(laborHours * LABOR_RATE);
     return {
       damageId: item.id, part: item.part, type: item.type, severity: item.severity,
       operation: replace ? 'Replace' : 'Repair',
       parts,
-      partsBasis: !replace ? 'none' : offer ? 'listing' : 'estimate',
-      partListing: offer?.cheapest ?? null,
-      alternatives: offer?.alternatives ?? [],
+      partsBasis: !replace ? 'none' : !chargePart ? 'included' : offer ? 'listing' : 'estimate',
+      partListing: chargePart ? offer?.cheapest ?? null : null,
+      alternatives: chargePart ? offer?.alternatives ?? [] : [],
+      similarListings: chargePart && !offer ? search?.similar ?? [] : [],
+      searchLinks: chargePart ? search?.searchLinks ?? [] : [],
       paint, laborHours, laborRate: LABOR_RATE, labor, total: round2(parts + paint + labor),
     };
   });

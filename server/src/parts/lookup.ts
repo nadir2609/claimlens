@@ -1,6 +1,6 @@
-import type { DamageItem, Part, PartListing, PartOffer, VehicleInfo } from '@claimlens/shared';
+import type { DamageItem, Part, PartListing, PartSearchResult, VehicleInfo } from '@claimlens/shared';
 import { needsReplacement } from '../pipeline/cost';
-import { PART_RULES, searchMake, selectOffer } from './match';
+import { PART_RULES, searchMake, selectOffer, selectSimilar } from './match';
 import { parseAvtopro, parseEhtiyat } from './parsers';
 
 /** Returns a page as markdown. The real implementation is Firecrawl; tests substitute a fake. */
@@ -14,7 +14,7 @@ export interface PriceCache {
 }
 
 export interface PartLookup {
-  find(part: Part, vehicle: VehicleInfo): Promise<PartOffer | null>;
+  find(part: Part, vehicle: VehicleInfo): Promise<PartSearchResult | null>;
 }
 
 const CACHE_MS = 24 * 60 * 60 * 1000;
@@ -49,12 +49,18 @@ export class PartPriceLookup implements PartLookup {
     private readonly now: () => number = Date.now,
   ) {}
 
-  async find(part: Part, vehicle: VehicleInfo): Promise<PartOffer | null> {
+  async find(part: Part, vehicle: VehicleInfo): Promise<PartSearchResult | null> {
     const make = vehicle.make.trim();
     if (!make || make.toLowerCase() === 'unknown') return null;
     const [avtopro, ehtiyat] = searchUrls(part, make);
     const pages = await Promise.all([this.listings(avtopro, parseAvtopro), this.listings(ehtiyat, parseEhtiyat)]);
-    return selectOffer(pages.flat(), part, vehicle);
+    const all = pages.flat();
+    const offer = selectOffer(all, part, vehicle);
+    return {
+      offer,
+      similar: offer ? [] : selectSimilar(all, part),
+      searchLinks: [{ source: 'avtopro.az', url: avtopro }, { source: 'ehtiyathisseleri.az', url: ehtiyat }],
+    };
   }
 
   private async listings(url: string, parse: (markdown: string) => PartListing[]): Promise<PartListing[]> {
@@ -72,16 +78,16 @@ export class PartPriceLookup implements PartLookup {
   }
 }
 
-/** Looks up an offer for each distinct part that will be replaced. A failed lookup just leaves that part out. */
+/** Searches for each distinct part that will be replaced. A failed lookup just leaves that part out. */
 export async function findOffers(
   lookup: PartLookup, items: DamageItem[], vehicle: VehicleInfo,
-): Promise<Partial<Record<Part, PartOffer>>> {
-  const offers: Partial<Record<Part, PartOffer>> = {};
+): Promise<Partial<Record<Part, PartSearchResult>>> {
+  const offers: Partial<Record<Part, PartSearchResult>> = {};
   const parts = [...new Set(items.filter(needsReplacement).map((i) => i.part))];
   for (const part of parts) {
     try {
-      const offer = await lookup.find(part, vehicle);
-      if (offer) offers[part] = offer;
+      const found = await lookup.find(part, vehicle);
+      if (found) offers[part] = found;
     } catch (err) {
       console.warn(`Part price lookup failed for ${part}: ${err instanceof Error ? err.message : err}`);
     }

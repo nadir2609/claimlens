@@ -132,7 +132,7 @@ describe('runPipeline', () => {
       fraudObservations: [],
     }));
     const cheapest = { title: 'Ön bamper Mazda CX-7', price: 417.61, url: 'https://www.avtopro.az/products/on-bamper-mazda-cx-7-207408', source: 'avtopro.az' };
-    deps.partLookup = { find: async (part) => (part === 'Front Bumper' ? { cheapest, alternatives: [] } : null) };
+    deps.partLookup = { find: async (part) => (part === 'Front Bumper' ? { offer: { cheapest, alternatives: [] }, similar: [], searchLinks: [] } : null) };
     const id = await addClaim([1, 2, 3, 4]);
     await runPipeline(deps, id);
     const line = deps.store.get(id)!.cost.lines[0];

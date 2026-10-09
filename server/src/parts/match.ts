@@ -44,12 +44,14 @@ const MAKE_ALIASES: Record<string, string[]> = {
   hyundai: ['hyundai', 'hunday', 'hundai'],
   chevrolet: ['chevrolet', 'sevrolet', 'chevy'],
   toyota: ['toyota', 'tayota'],
+  lada: ['lada', 'vaz', 'jiquli'],
   'land rover': ['land rover', 'range rover'],
 };
 
 /** A body panel below this price is a placeholder ("1 Azn, call me") or a different item. */
 export const MIN_PLAUSIBLE_PRICE = 20;
 const MAX_ALTERNATIVES = 4;
+const MAX_SIMILAR = 3;
 
 const hasWord = (folded: string, words: string[]) =>
   words.some((w) => new RegExp(`(^|[^a-z0-9])${w}([^a-z0-9]|$)`).test(folded));
@@ -105,4 +107,15 @@ export function selectOffer(listings: PartListing[], part: Part, vehicle: Vehicl
 
   matches.sort((a, b) => a.price - b.price);
   return { cheapest: matches[0], alternatives: matches.slice(1, 1 + MAX_ALTERNATIVES) };
+}
+
+/** The same part for any vehicle, cheapest first. A price reference for when nothing is listed for the make. */
+export function selectSimilar(listings: PartListing[], part: Part): PartListing[] {
+  const unique = new Map<string, PartListing>();
+  for (const listing of listings) {
+    if (listing.price >= MIN_PLAUSIBLE_PRICE && isPart(fold(listing.title), part) && !unique.has(listing.url)) {
+      unique.set(listing.url, listing);
+    }
+  }
+  return [...unique.values()].sort((a, b) => a.price - b.price).slice(0, MAX_SIMILAR);
 }

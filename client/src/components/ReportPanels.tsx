@@ -1,5 +1,5 @@
 import {
-  PARTS, type Coverage, type CostEstimate, type CostLine, type FraudAssessment, type Recommendation,
+  PARTS, type Coverage, type CostEstimate, type CostLine, type PartListing, type FraudAssessment, type Recommendation,
   type SeverityBand, type VehicleInfo,
 } from '@claimlens/shared';
 import { money } from '../lib/format';
@@ -83,34 +83,65 @@ export function SeverityGauge({ score, band }: { score: number; band: SeverityBa
   );
 }
 
-/** Shows where a replaced part's price came from: the cheapest listing with a link, or a fallback estimate. */
+function ListingLinks({ listings }: { listings: PartListing[] }) {
+  return (
+    <ul>
+      {listings.map((l) => (
+        <li key={l.url}>
+          <a href={l.url} target="_blank" rel="noreferrer">{l.title}</a>{' '}
+          <span className="muted">({l.source})</span> <span className="num">{money(l.price)}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/**
+ * Shows where a replaced part's price came from, with links a person can open to check:
+ * the cheapest listing, other listings, the same part for other vehicles, and the search pages themselves.
+ */
 function PartSource({ line }: { line: CostLine }) {
-  // Reports saved before live prices existed have no basis recorded.
+  // Reports saved before live prices existed have none of these fields.
   const basis = line.partsBasis ?? (line.operation === 'Replace' ? 'estimate' : 'none');
-  if (basis === 'none') return null;
-  if (basis === 'estimate' || !line.partListing) {
-    return <div className="part-source muted small">Estimated price, no listing found</div>;
-  }
   const alternatives = line.alternatives ?? [];
+  const similar = line.similarListings ?? [];
+  const searchLinks = line.searchLinks ?? [];
+  if (basis === 'none') return null;
+  if (basis === 'included') return <div className="part-source muted small">Part already counted on an earlier line</div>;
+
   return (
     <div className="part-source small">
-      <div>
-        Cheapest listing:{' '}
-        <a href={line.partListing.url} target="_blank" rel="noreferrer">{line.partListing.title}</a>{' '}
-        <span className="muted">({line.partListing.source})</span>
-      </div>
+      {basis === 'listing' && line.partListing ? (
+        <div>
+          Cheapest listing:{' '}
+          <a href={line.partListing.url} target="_blank" rel="noreferrer">{line.partListing.title}</a>{' '}
+          <span className="muted">({line.partListing.source})</span>
+        </div>
+      ) : (
+        <div className="muted">Estimated price: nothing is listed for this make</div>
+      )}
       {alternatives.length > 0 && (
         <details>
           <summary>{alternatives.length} other {alternatives.length === 1 ? 'listing' : 'listings'}</summary>
-          <ul>
-            {alternatives.map((a) => (
-              <li key={a.url}>
-                <a href={a.url} target="_blank" rel="noreferrer">{a.title}</a>{' '}
-                <span className="muted">({a.source})</span> <span className="num">{money(a.price)}</span>
-              </li>
-            ))}
-          </ul>
+          <ListingLinks listings={alternatives} />
         </details>
+      )}
+      {similar.length > 0 && (
+        <div>
+          Same part for other vehicles, for reference:
+          <ListingLinks listings={similar} />
+        </div>
+      )}
+      {searchLinks.length > 0 && (
+        <div>
+          Check on:{' '}
+          {searchLinks.map((link, i) => (
+            <span key={link.url}>
+              {i > 0 && ', '}
+              <a href={link.url} target="_blank" rel="noreferrer">{link.source}</a>
+            </span>
+          ))}
+        </div>
       )}
     </div>
   );
@@ -174,10 +205,11 @@ export function CostTable({ cost }: { cost: CostEstimate }) {
         </div>
       )}
       <p className="muted small">
-        Parts are charged only when an item is replaced. Where a matching listing was found on avtopro.az or
-        ehtiyathisseleri.az, the cheapest one is used and linked; check the listing fits the vehicle before relying on it.
-        Otherwise the part price is an estimate from a fixed table at the {cost.makeTier} make tier
-        (×{cost.tierMultiplier.toFixed(1)}). Labour ({money(cost.laborRate)} per hour) and paint are placeholder rates.
+        Parts are charged only when an item is replaced, once per part. Where a listing for this make was found on
+        avtopro.az or ehtiyathisseleri.az, the cheapest one is used and linked; check it fits the vehicle before relying
+        on it. Otherwise the part price is an estimate from a fixed table at the {cost.makeTier} make tier
+        (×{cost.tierMultiplier.toFixed(1)}), and listings for other vehicles are shown for reference only.
+        Labour ({money(cost.laborRate)} per hour) and paint are placeholder rates.
       </p>
     </section>
   );

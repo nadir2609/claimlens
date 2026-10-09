@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 import type { DamageItem, PartListing, VehicleInfo } from '@claimlens/shared';
 import { PartPriceLookup, findOffers, searchUrls, type PageFetcher } from '../src/parts/lookup';
-import { selectOffer } from '../src/parts/match';
+import { selectOffer, selectSimilar } from '../src/parts/match';
 import { parseAvtopro, parseEhtiyat } from '../src/parts/parsers';
 import { ClaimStore } from '../src/store';
 
@@ -97,6 +97,19 @@ describe('selectOffer', () => {
     expect(selectOffer([listing('Mercedes W213 2016-22 kapot üzlüyü', 70), listing('Mercedes kapot örtüyü', 60)], 'Hood', merc)).toBeNull();
   });
 
+  it('recognises a Lada listed as VAZ', () => {
+    const lada = { ...mazda, make: 'Lada', model: 'Samara' };
+    expect(selectOffer([listing('VAZ 2109 ön bamper', 80)], 'Front Bumper', lada)!.cheapest.price).toBe(80);
+  });
+
+  it('offers the same part for other vehicles as a reference when asked, cheapest first, at most three', () => {
+    const similar = selectSimilar([
+      listing('Ön bamper Toyota', 300), listing('Bamper bərkidicisi ön', 10), listing('Arxa bamper Kia', 90),
+      listing('Hyundai Sonata ön buferi', 145), listing('Ön bamper Mazda', 500), listing('Ön bamper BMW', 900),
+    ], 'Front Bumper');
+    expect(similar.map((l) => l.price)).toEqual([145, 300, 500]);
+  });
+
   it('returns null for an unknown make', () => {
     expect(selectOffer([listing('Ön bamper Mazda', 500)], 'Front Bumper', { ...mazda, make: 'Unknown' })).toBeNull();
   });
@@ -122,9 +135,21 @@ describe('PartPriceLookup', () => {
   it('searches both sites and returns the cheapest match across them', async () => {
     const f = fetcher();
     const lookup = new PartPriceLookup(f, new ClaimStore(':memory:'));
-    const offer = await lookup.find('Front Bumper', { ...mazda, model: 'Unknown' });
+    const found = await lookup.find('Front Bumper', { ...mazda, model: 'Unknown' });
     expect(f.markdown).toHaveBeenCalledTimes(2);
-    expect(offer!.cheapest).toMatchObject({ price: 417.61, source: 'avtopro.az' });
+    expect(found!.offer!.cheapest).toMatchObject({ price: 417.61, source: 'avtopro.az' });
+    expect(found!.searchLinks).toEqual([
+      { source: 'avtopro.az', url: avtoproUrl }, { source: 'ehtiyathisseleri.az', url: ehtiyatUrl },
+    ]);
+  });
+
+  it('when nothing is listed for the make, returns no offer but links the same part for other vehicles', async () => {
+    const f = fetcher();
+    f.markdown.mockImplementation(async (url: string) => (url.includes('avtopro') ? fixture('avtopro-bamper-mazda.md') : ''));
+    const found = await new PartPriceLookup(f, new ClaimStore(':memory:')).find('Front Bumper', { ...mazda, make: 'Lada', model: 'Samara' });
+    expect(found!.offer).toBeNull();
+    expect(found!.similar.map((l) => l.title)).toEqual(['Ön bamper Mazda CX-7', 'Ön bamper Mazda', 'Ön bamper Mazda CX-9']);
+    expect(found!.searchLinks[0].url).toBe('https://www.avtopro.az/products?search=bamper%20lada');
   });
 
   it('serves repeat lookups from the cache, and refetches after 24 hours', async () => {
@@ -146,7 +171,7 @@ describe('PartPriceLookup', () => {
       return pages[url];
     });
     const lookup = new PartPriceLookup(f, new ClaimStore(':memory:'));
-    expect((await lookup.find('Front Bumper', mazda))!.cheapest.price).toBe(417.61);
+    expect((await lookup.find('Front Bumper', mazda))!.offer!.cheapest.price).toBe(417.61);
     await lookup.find('Front Bumper', mazda);
     expect(f.markdown.mock.calls.filter(([u]) => u === ehtiyatUrl)).toHaveLength(2);
     expect(f.markdown.mock.calls.filter(([u]) => u === avtoproUrl)).toHaveLength(1);
@@ -166,7 +191,7 @@ describe('findOffers', () => {
   it('looks up only parts that will be replaced, once each, and survives a failing lookup', async () => {
     const find = vi.fn(async (part: string) => {
       if (part === 'Hood') throw new Error('boom');
-      return { cheapest: listing(`${part} Mazda`, 100), alternatives: [] };
+      return { offer: { cheapest: listing(`${part} Mazda`, 100), alternatives: [] }, similar: [], searchLinks: [] };
     });
     const offers = await findOffers({ find }, [item('Front Bumper', 'High'), item('Front Bumper', 'High'), item('Hood', 'High'), item('Doors', 'Low')], mazda);
     expect(find.mock.calls.map(([p]) => p)).toEqual(['Front Bumper', 'Hood']);

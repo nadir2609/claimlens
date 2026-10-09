@@ -88,6 +88,21 @@ export interface PartOffer {
   alternatives: PartListing[];
 }
 
+export interface SearchLink {
+  source: string;
+  url: string;
+}
+
+/** What a marketplace search found for one part of one vehicle. */
+export interface PartSearchResult {
+  /** The match for this vehicle's make, or null when nothing is listed for it. */
+  offer: PartOffer | null;
+  /** The same part for other vehicles, as a price reference only. */
+  similar: PartListing[];
+  /** The search-result pages, so a person can check for themselves. */
+  searchLinks: SearchLink[];
+}
+
 export interface CostLine {
   damageId: string;
   part: Part;
@@ -95,10 +110,15 @@ export interface CostLine {
   severity: Severity;
   operation: 'Repair' | 'Replace';
   parts: number;
-  /** Where the parts price came from: a marketplace listing, the fallback table, or no part needed. */
-  partsBasis: 'listing' | 'estimate' | 'none';
+  /**
+   * Where the parts price came from: a marketplace listing, the fallback table, no part needed,
+   * or already charged on an earlier line for the same part.
+   */
+  partsBasis: 'listing' | 'estimate' | 'none' | 'included';
   partListing: PartListing | null;
   alternatives: PartListing[];
+  similarListings: PartListing[];
+  searchLinks: SearchLink[];
   paint: number;
   laborHours: number;
   laborRate: number;

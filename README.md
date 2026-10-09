@@ -55,7 +55,9 @@ Set `FIRECRAWL_API_KEY` in `.env` (key from https://www.firecrawl.dev) to price 
 - A listing counts only if its title names the part and the make, is not an accessory (bracket, trim, seal, cover and similar), is for the right side (front or rear bumper), and costs at least 20 AZN. If any listing names the model, only those are considered.
 - The cheapest match is charged and linked in the cost table; up to four other matches are listed under it.
 - Search pages are cached for 24 hours, so each part and make costs at most two Firecrawl credits per day.
-- When nothing matches, or no key is set, the part price falls back to a fixed table and the line is marked "Estimated price, no listing found".
+- When nothing is listed for the make, the part price falls back to a fixed table. The line then shows up to three listings of the same part for other vehicles, as a reference only, and they do not change the price.
+- Every replaced part also links to the two search-result pages, so a person can check the sites directly.
+- A part with several kinds of damage is bought and painted once; later lines for it charge labour only.
 
 Matching is by title text, so a listing can still be the wrong generation or trim: open the link before relying on it. Labour (160 AZN per hour) and paint are placeholder rates, not from these sites. Check the sites' terms before using automated access beyond a demo.
 
