@@ -4,3 +4,4 @@ dist/
 server/data/
 server/uploads/
 *.log
+.superpowers/
