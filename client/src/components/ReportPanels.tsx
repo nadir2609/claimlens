@@ -206,8 +206,8 @@ export function CostTable({ cost }: { cost: CostEstimate }) {
       )}
       <p className="muted small">
         Parts are charged only when an item is replaced, once per part. Where RockAuto (aftermarket) or
-        PartSouq (genuine) lists the part for this vehicle, the cheapest listing is used and linked; check its fitment
-        note (trim, side) before relying on it. Otherwise
+        PartSouq (genuine) lists the part for this vehicle, the cheapest listing is used and linked; when they do not,
+        eBay is searched instead. Check the listing fits the car (trim, side, condition) before relying on it. Otherwise
         the part price is an estimate from a fixed table at the {cost.makeTier} make tier
         (×{cost.tierMultiplier.toFixed(1)}). Labour ({money(cost.laborRate)} per hour) and paint are placeholder rates.
         Prices exclude shipping and tax.
