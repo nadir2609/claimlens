@@ -10,9 +10,9 @@ describe('prepareImage', () => {
     expect((await prepareImage(await flatJpeg())).quality.issues).toContain('blurry');
   });
 
-  it('flags low resolution from the original size', async () => {
+  it('accepts a small photo and reports its original size', async () => {
     const q = (await prepareImage(await sceneJpeg(1, 640, 480))).quality;
-    expect(q.issues).toEqual(['low_resolution']);
+    expect(q.pass).toBe(true);
     expect([q.width, q.height]).toEqual([640, 480]);
   });
 

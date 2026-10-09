@@ -37,7 +37,7 @@ In every mode the image quality check, severity score, cost estimate, fraud scor
 
 ## How the pipeline works
 
-1. **Quality**: blur (variance of the Laplacian), brightness and resolution. Runs in the browser for instant Pass/Fail badges and again on the server, which is authoritative. At least 4 photos must pass.
+1. **Quality**: blur (variance of the Laplacian) and brightness. Runs in the browser for instant Pass/Fail badges and again on the server, which is authoritative. At least 4 photos must pass.
 2. **Vision**: vehicle make, model, year and body type; per photo, the viewing angle, visible parts and damaged regions as `[x, y, width, height]` fractions of the image.
 3. **Coverage**: front, side and rear views, and all seven parts (Front Bumper, Hood, Headlights, Doors, Rear Bumper, Fenders, Windshield) must be visible somewhere. Gaps produce re-upload prompts; parts never shown are reported as "Not inspected".
 4. **Severity**: a 0–100 score from damage type and severity.

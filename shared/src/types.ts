@@ -3,7 +3,7 @@ import type {
   RecommendedAction, Severity, SeverityBand, Stage,
 } from './vocab';
 
-export type QualityIssue = 'blurry' | 'dark' | 'bright' | 'low_resolution';
+export type QualityIssue = 'blurry' | 'dark' | 'bright';
 
 export interface QualityResult {
   pass: boolean;

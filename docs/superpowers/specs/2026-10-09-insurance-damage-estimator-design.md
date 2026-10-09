@@ -87,11 +87,10 @@ Computed on a greyscale copy resized to 512 px on the long side.
 |---|---|---|
 | Sharpness | Variance of the 3×3 Laplacian | ≥ 60 |
 | Brightness | Mean luma (0–255) | 50 to 215 |
-| Resolution | Original pixel size | long side ≥ 800 and short side ≥ 600 |
 
 The same function runs in the browser (canvas) for instant Pass/Fail badges as
 photos are dropped, and on the server as the authoritative result. A failed photo
-shows the reason ("Too blurry", "Too dark", "Too bright", "Resolution too low").
+shows the reason ("Too blurry", "Too dark", "Too bright"). There is no minimum resolution; that check was removed at the user's request.
 Photos that fail on the server are still stored but excluded from vision analysis.
 Fewer than 4 passing photos blocks submission.
 

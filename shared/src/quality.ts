@@ -5,15 +5,12 @@ export const QUALITY = {
   minSharpness: 60,
   minBrightness: 50,
   maxBrightness: 215,
-  minLongSide: 800,
-  minShortSide: 600,
 } as const;
 
 export const QUALITY_MESSAGES: Record<QualityIssue, string> = {
   blurry: 'Too blurry',
   dark: 'Too dark',
   bright: 'Too bright',
-  low_resolution: 'Resolution too low',
 };
 
 export function analysisDimensions(width: number, height: number): { width: number; height: number } {
@@ -63,9 +60,6 @@ export function assessQuality(
   if (sharpness < QUALITY.minSharpness) issues.push('blurry');
   if (brightness < QUALITY.minBrightness) issues.push('dark');
   if (brightness > QUALITY.maxBrightness) issues.push('bright');
-  const long = Math.max(originalWidth, originalHeight);
-  const short = Math.min(originalWidth, originalHeight);
-  if (long < QUALITY.minLongSide || short < QUALITY.minShortSide) issues.push('low_resolution');
   return {
     pass: issues.length === 0,
     sharpness: Math.round(sharpness * 10) / 10,

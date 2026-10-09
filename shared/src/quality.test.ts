@@ -28,11 +28,10 @@ describe('quality metric', () => {
     expect(assessQuality(checker(64, 64, 220, 255), 64, 64, 1200, 900).issues).toEqual(['bright']);
   });
 
-  it('checks resolution on the original size in either orientation', () => {
-    const g = checker(64, 64, 0, 255);
-    expect(assessQuality(g, 64, 64, 640, 480).issues).toEqual(['low_resolution']);
-    expect(assessQuality(g, 64, 64, 600, 800).pass).toBe(true);
-    expect(assessQuality(g, 64, 64, 800, 599).issues).toEqual(['low_resolution']);
+  it('does not reject small images, and reports the original size', () => {
+    const q = assessQuality(checker(64, 64, 0, 255), 64, 64, 320, 240);
+    expect(q.pass).toBe(true);
+    expect([q.width, q.height]).toEqual([320, 240]);
   });
 
   it('returns 0 sharpness for images too small to convolve', () => {
