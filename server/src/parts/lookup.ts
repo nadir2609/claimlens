@@ -1,8 +1,9 @@
-import type { DamageItem, Part, PartSearchResult, VehicleInfo } from '@claimlens/shared';
+import type { DamageItem, Part, PartListing, PartSearchResult, SearchLink, VehicleInfo } from '@claimlens/shared';
 import { needsReplacement } from '../pipeline/cost';
+import { PARTSOUQ, parsePartsouq, partsouqUrl, type PartsouqResult } from './partsouq';
 import {
-  BODY_CATEGORY, CATALOG, PART_TYPES, SOURCE, childLinks, firstYear, matchModel, parseListings, selectListing, slug,
-  type RockListing,
+  BODY_CATEGORY, CATALOG, PART_TYPES, SOURCE, childLinks, firstYear, matchListings, matchModel, oemCandidates,
+  parseListings, slug, toOffer, toPartListing, type RockListing,
 } from './rockauto';
 
 /** Returns a page's HTML. The real implementation is Firecrawl; tests substitute a fake. */
@@ -45,8 +46,9 @@ export class FirecrawlFetcher implements PageFetcher {
 }
 
 /**
- * Finds the cheapest RockAuto listing for a part of a specific vehicle by walking the catalog:
- * model page -> first engine -> body category -> part type page. Every page read is cached for 24 hours.
+ * Finds the cheapest listing for a part of a specific vehicle. Aftermarket parts come from RockAuto, by walking its
+ * catalog: model page -> first engine -> body category -> part type page. The genuine part is then priced on
+ * PartSouq by part number. Every page read is cached for 24 hours.
  */
 export class RockAutoLookup implements PartLookup {
   constructor(
@@ -69,8 +71,30 @@ export class RockAutoLookup implements PartLookup {
       .find((url) => url !== undefined);
     if (!page) return { offer: null, similar: [], searchLinks: [{ source: SOURCE, url: category }] };
 
-    const listings = await this.read<RockListing[]>(page, parseListings) ?? [];
-    return { offer: selectListing(listings, part, page), similar: [], searchLinks: [{ source: SOURCE, url: page }] };
+    const matched = matchListings(await this.read<RockListing[]>(page, parseListings) ?? [], part);
+    const listings: PartListing[] = matched.map((l) => toPartListing(l, page));
+    const searchLinks: SearchLink[] = [{ source: SOURCE, url: page }];
+
+    const genuine = await this.genuine(matched, vehicle.make);
+    if (genuine) searchLinks.push({ source: PARTSOUQ, url: genuine.url });
+    return { offer: toOffer(listings, genuine), similar: [], searchLinks };
+  }
+
+  /**
+   * The genuine part on PartSouq. PartSouq is searched by part number, so this uses the car maker's number that the
+   * cheapest RockAuto listings say they replace, and accepts a result only when PartSouq files it under the same make.
+   */
+  private async genuine(matched: RockListing[], make: string): Promise<PartListing | null> {
+    const wanted = make.toLowerCase().replace(/[^a-z0-9]/g, '');
+    for (const number of oemCandidates(matched.slice(0, 3).flatMap((l) => l.oemNumbers))) {
+      const url = partsouqUrl(number);
+      const result = await this.read<PartsouqResult | null>(url, parsePartsouq);
+      const filedUnder = result?.make.toLowerCase().replace(/[^a-z0-9]/g, '') ?? '';
+      if (result && filedUnder && (wanted.includes(filedUnder) || filedUnder.includes(wanted))) {
+        return { title: `${result.make} genuine ${result.partNumber}, ${result.name}`, price: result.price, url, source: PARTSOUQ };
+      }
+    }
+    return null;
   }
 
   /** The catalog page for the vehicle's first listed engine; body parts are the same across engines. */

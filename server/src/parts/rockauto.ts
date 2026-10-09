@@ -16,6 +16,8 @@ export interface RockListing {
   note: string;
   price: number;
   infoUrl: string | null;
+  /** Other numbers this part replaces: the car maker's own part number mixed with other aftermarket codes. */
+  oemNumbers: string[];
 }
 
 /** Which catalog part type holds each report part. Doors and windshields are usually not sold as whole parts. */
@@ -69,26 +71,53 @@ export function parseListings(html: string): RockListing[] {
       note: note ? text(note[1]) : '',
       price: value,
       infoUrl: info ? decode(info[1]) : null,
+      oemNumbers: (/title="Replaces these[^"]*"[^>]*>([^<]*)</.exec(block)?.[1] ?? '').split(',').map((n) => n.trim()).filter(Boolean),
     });
   }
   return listings;
 }
 
-/** The cheapest listing for the part (and for the right end of the car, for bumpers), with the next few as alternatives. */
-export function selectListing(listings: RockListing[], part: Part, pageUrl: string): PartOffer | null {
+/** Listings for the part (and for the right end of the car, for bumpers), cheapest first. */
+export function matchListings(listings: RockListing[], part: Part): RockListing[] {
   const side = PART_TYPES[part].side;
   const other = side === 'Front' ? 'Rear' : 'Front';
-  const matches = listings
+  return listings
     // A note naming only the other end is the wrong part; naming both, or neither, is acceptable.
     .filter((l) => !side || new RegExp(`\\b${side}\\b`).test(l.note) || !new RegExp(`\\b${other}\\b`).test(l.note))
-    .sort((a, b) => a.price - b.price)
-    .map((l): PartListing => ({
-      title: `${[l.manufacturer, l.partNumber].filter(Boolean).join(' ')}${l.description ? `, ${l.description}` : ''}${l.note ? ` (${l.note})` : ''}`,
-      price: l.price,
-      url: l.infoUrl ?? pageUrl,
-      source: SOURCE,
-    }));
-  return matches.length ? { cheapest: matches[0], alternatives: matches.slice(1, 1 + MAX_ALTERNATIVES) } : null;
+    .sort((a, b) => a.price - b.price);
+}
+
+export function toPartListing(l: RockListing, pageUrl: string): PartListing {
+  return {
+    title: `${[l.manufacturer, l.partNumber].filter(Boolean).join(' ')}${l.description ? `, ${l.description}` : ''}${l.note ? ` (${l.note})` : ''}`,
+    price: l.price,
+    url: l.infoUrl ?? pageUrl,
+    source: SOURCE,
+  };
+}
+
+/**
+ * Cheapest listing first, then the next few as alternatives. A `genuine` listing is always included, taking the
+ * last alternative slot if it would otherwise be pushed out by cheaper aftermarket parts.
+ */
+export function toOffer(listings: PartListing[], genuine?: PartListing | null): PartOffer | null {
+  const sorted = [...listings].sort((a, b) => a.price - b.price);
+  const kept = genuine ? [...sorted.slice(0, MAX_ALTERNATIVES), genuine] : sorted.slice(0, MAX_ALTERNATIVES + 1);
+  kept.sort((a, b) => a.price - b.price);
+  return kept.length ? { cheapest: kept[0], alternatives: kept.slice(1) } : null;
+}
+
+/**
+ * From a listing's interchange numbers, the ones most likely to be the car maker's own part number, best first.
+ * Aftermarket "Partslink" codes (two letters and seven digits, such as TO1000378C) are dropped; maker numbers are
+ * mostly digits, so the rest are ranked by how numeric they are. At most two are returned.
+ */
+export function oemCandidates(numbers: string[]): string[] {
+  const digitShare = (n: string) => n.replace(/\D/g, '').length / n.length;
+  return [...new Set(numbers.map((n) => n.replace(/[\s-]/g, '').toUpperCase()))]
+    .filter((n) => n.length >= 8 && n.length <= 14 && !/^[A-Z]{2}\d{7}[A-Z]*$/.test(n) && digitShare(n) >= 0.7)
+    .sort((a, b) => digitShare(b) - digitShare(a))
+    .slice(0, 2);
 }
 
 const plain = (s: string) => decodeURIComponent(s).toLowerCase().replace(/[^a-z0-9]/g, '');

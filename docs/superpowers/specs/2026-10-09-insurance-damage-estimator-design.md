@@ -162,7 +162,8 @@ labour cost and line total, then subtotals and a grand total. The grand total al
 equals the sum of the line totals.
 
 **Revision (live part prices).** Amounts are in US dollars, as in the tables above. When `FIRECRAWL_API_KEY` is
-set, a replaced part is priced from the cheapest rockauto.com listing for the identified vehicle (read through
+set, a replaced part is priced from the cheapest listing on rockauto.com (aftermarket) or partsouq.com (genuine,
+looked up by the maker's part number taken from the RockAuto listing) for the identified vehicle (read through
 Firecrawl, each catalog page cached 24 hours), with the link stored on the cost line; the table above is the
 fallback when RockAuto has no listing. A part with several kinds of damage is bought and painted once. (An
 interim version read two Azerbaijani marketplaces and priced in AZN; it was replaced at the user's request.)

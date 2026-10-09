@@ -23,5 +23,5 @@ const app = createApp({
 });
 
 app.listen(config.port, () => {
-  console.log(`ClaimLens API on http://localhost:${config.port} (analysis mode: ${analyzer.mode}, part prices: ${config.firecrawlApiKey ? 'live from rockauto.com' : 'fallback table'})`);
+  console.log(`ClaimLens API on http://localhost:${config.port} (analysis mode: ${analyzer.mode}, part prices: ${config.firecrawlApiKey ? 'live from rockauto.com and partsouq.com' : 'fallback table'})`);
 });

@@ -4,11 +4,14 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 import type { DamageItem, VehicleInfo } from '@claimlens/shared';
 import { FirecrawlFetcher, RockAutoLookup, findOffers, type PageFetcher } from '../src/parts/lookup';
-import { firstYear, parseListings } from '../src/parts/rockauto';
+import { parsePartsouq, partsouqUrl } from '../src/parts/partsouq';
+import { firstYear, oemCandidates, parseListings, toOffer } from '../src/parts/rockauto';
 import { ClaimStore } from '../src/store';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const listingPage = readFileSync(join(here, 'fixtures', 'rockauto-bumper-cover.html'), 'utf8');
+const partsouqPage = readFileSync(join(here, 'fixtures', 'partsouq-result.html'), 'utf8');
+const rockautoCalls = (html: { mock: { calls: unknown[][] } }) => html.mock.calls.map(([u]) => String(u)).filter((u) => u.includes('rockauto.com'));
 
 const BASE = 'https://www.rockauto.com/en/catalog';
 const MODEL = `${BASE}/toyota,2012,camry`;
@@ -44,6 +47,14 @@ describe('RockAuto page parsing', () => {
     expect(items[0].note).toMatch(/^Rear; /);
     expect(items[0].infoUrl).toBe('https://www.rockauto.com/en/moreinfo.php?pk=3660768&cc=1502610&pt=1344');
     expect(items.every((i) => i.price > 0)).toBe(true);
+    expect(items.find((i) => i.partNumber === 'TO1000378')!.oemNumbers).toContain('5211906974');
+  });
+
+  it('ranks the numbers most likely to be the car maker\'s own part number first, skipping aftermarket codes', () => {
+    expect(oemCandidates(['S1077B101BP0N', 'TY04402BB', 'TY4161390A0', '5211906974', 'TO1000378C', 'TO1000378DSC']))
+      .toEqual(['5211906974', 'TY4161390A0']);
+    expect(oemCandidates(['86511F2000', 'HY1000216'])).toEqual(['86511F2000']);
+    expect(oemCandidates([])).toEqual([]);
   });
 
   it('returns nothing for a page without listings', () => {
@@ -57,12 +68,40 @@ describe('RockAuto page parsing', () => {
   });
 });
 
+describe('toOffer', () => {
+  const l = (price: number, source = 'rockauto.com') => ({ title: `p${price}`, price, url: `https://x.test/${price}`, source });
+
+  it('always keeps the genuine part in view, even when four cheaper listings exist', () => {
+    const genuine = l(900, 'partsouq.com');
+    const offer = toOffer([l(50), l(60), l(70), l(80), l(90), l(100)], genuine)!;
+    expect(offer.cheapest.price).toBe(50);
+    expect(offer.alternatives.map((a) => a.price)).toEqual([60, 70, 80, 900]);
+  });
+
+  it('lets the genuine part be the cheapest, and works with no genuine part or no listings', () => {
+    expect(toOffer([l(50), l(60)], l(40, 'partsouq.com'))!.cheapest.source).toBe('partsouq.com');
+    expect(toOffer([l(60), l(50)])!.alternatives.map((a) => a.price)).toEqual([60]);
+    expect(toOffer([])).toBeNull();
+  });
+});
+
+describe('PartSouq page parsing', () => {
+  it('reads the part name, number, make and cheapest price in USD', () => {
+    expect(parsePartsouq(partsouqPage)).toEqual({ name: 'COVER, FRONT BUMPER', partNumber: '5211906975', make: 'Toyota', price: 258.19 });
+  });
+
+  it('returns null when nothing was found or the price is not in USD', () => {
+    expect(parsePartsouq('<html><head><title>Search | PartSouq</title></head><body><b>Nothing found.</b></body></html>')).toBeNull();
+    expect(parsePartsouq(partsouqPage.replace('content="USD"', 'content="AED"'))).toBeNull();
+  });
+});
+
 describe('RockAutoLookup', () => {
   it('walks model, engine and category pages and returns the cheapest front bumper with a link', async () => {
     const { fetcher, html } = site();
     const found = await new RockAutoLookup(fetcher, new ClaimStore(':memory:')).find('Front Bumper', camry);
 
-    expect(html.mock.calls.map(([u]) => u)).toEqual([MODEL, CATEGORY, BUMPER]);
+    expect(rockautoCalls(html)).toEqual([MODEL, CATEGORY, BUMPER]);
     expect(found!.offer!.cheapest).toMatchObject({
       title: 'VARIOUS MFR TO1000378, Primed (Customer Paints to Match) (Front; L Model or LE Model or XLE Model)',
       price: 71.79, source: 'rockauto.com',
@@ -79,7 +118,7 @@ describe('RockAutoLookup', () => {
     const rear = await lookup.find('Rear Bumper', camry);
     expect(rear!.offer!.cheapest.price).toBe(51.79);
     expect(rear!.offer!.cheapest.title).toContain('Rear;');
-    expect(html).toHaveBeenCalledTimes(3);
+    expect(rockautoCalls(html)).toHaveLength(3);
   });
 
   it('refetches after 24 hours', async () => {
@@ -89,7 +128,7 @@ describe('RockAutoLookup', () => {
     await lookup.find('Front Bumper', camry);
     now += 24 * 3600 * 1000 + 1;
     await lookup.find('Front Bumper', camry);
-    expect(html).toHaveBeenCalledTimes(6);
+    expect(rockautoCalls(html)).toHaveLength(6);
   });
 
   it('uses the first year of a range', async () => {
@@ -102,7 +141,7 @@ describe('RockAutoLookup', () => {
     const { fetcher, html } = site({ [`${BASE}/toyota,2012`]: links(`${BASE}/toyota,2012,corolla`, MODEL, `${BASE}/toyota,2012,camry+hybrid`) });
     const found = await new RockAutoLookup(fetcher, new ClaimStore(':memory:')).find('Front Bumper', { ...camry, model: 'Camry LE' });
     expect(found!.offer!.cheapest.price).toBe(71.79);
-    expect(html.mock.calls.map(([u]) => u).slice(0, 3)).toEqual([`${BASE}/toyota,2012,camry+le`, `${BASE}/toyota,2012`, MODEL]);
+    expect(rockautoCalls(html).slice(0, 3)).toEqual([`${BASE}/toyota,2012,camry+le`, `${BASE}/toyota,2012`, MODEL]);
   });
 
   it('gives the part page link but no offer when that page has no listings', async () => {
@@ -120,7 +159,44 @@ describe('RockAutoLookup', () => {
   it('does not confuse a part with its accessories (hood is not hood hinge)', async () => {
     const { fetcher, html } = site();
     await new RockAutoLookup(fetcher, new ClaimStore(':memory:')).find('Hood', camry);
-    expect(html.mock.calls.at(-1)![0]).toBe(HOOD);
+    expect(rockautoCalls(html).at(-1)).toBe(HOOD);
+  });
+
+  it('also prices the genuine part on PartSouq, using the maker\'s part number from the RockAuto listing', async () => {
+    const genuine = partsouqUrl('5211906974');
+    const { fetcher, html } = site({ [genuine]: partsouqPage });
+    const lookup = new RockAutoLookup(fetcher, new ClaimStore(':memory:'));
+    const found = await lookup.find('Front Bumper', camry);
+
+    expect(genuine).toBe('https://partsouq.com/en/search/all?q=5211906974');
+    expect(found!.offer!.cheapest).toMatchObject({ price: 71.79, source: 'rockauto.com' });
+    expect(found!.offer!.alternatives.map((a) => a.price)).toEqual([74.79, 159.89, 212.99, 258.19]);
+    expect(found!.offer!.alternatives.at(-1)).toEqual({
+      title: 'Toyota genuine 5211906975, COVER, FRONT BUMPER', price: 258.19, url: genuine, source: 'partsouq.com',
+    });
+    expect(found!.searchLinks).toEqual([{ source: 'rockauto.com', url: BUMPER }, { source: 'partsouq.com', url: genuine }]);
+
+    const before = html.mock.calls.length;
+    await lookup.find('Front Bumper', camry);
+    expect(html.mock.calls.length).toBe(before);
+  });
+
+  it('ignores a PartSouq result for a different make, and keeps the RockAuto price when PartSouq fails', async () => {
+    const genuine = partsouqUrl('5211906974');
+    const wrongMake = site({ [genuine]: partsouqPage.replace(/Toyota Parts/, 'Nissan Parts') });
+    const a = await new RockAutoLookup(wrongMake.fetcher, new ClaimStore(':memory:')).find('Front Bumper', camry);
+    expect(a!.offer!.alternatives.every((l) => l.source === 'rockauto.com')).toBe(true);
+
+    const down = site({ [genuine]: new Error('blocked') });
+    const b = await new RockAutoLookup(down.fetcher, new ClaimStore(':memory:')).find('Front Bumper', camry);
+    expect(b!.offer!.cheapest.price).toBe(71.79);
+    expect(b!.searchLinks).toEqual([{ source: 'rockauto.com', url: BUMPER }]);
+  });
+
+  it('tries at most two part numbers on PartSouq per part', async () => {
+    const { fetcher, html } = site();
+    await new RockAutoLookup(fetcher, new ClaimStore(':memory:')).find('Front Bumper', camry);
+    expect(html.mock.calls.filter(([u]) => String(u).includes('partsouq.com'))).toHaveLength(2);
   });
 
   it('returns null without searching when the make or year is unknown, and when the vehicle is not in the catalog', async () => {
