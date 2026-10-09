@@ -133,14 +133,43 @@ export function ReportPage() {
       <ActionBanner recommendation={report.recommendation} />
 
       <div className="report-grid">
-        <div className="stack no-print">
-          <DamageViewer
-            photos={report.photos}
-            selectedPhotoId={photoId}
-            onSelectPhoto={setPhotoId}
-            active={active}
-            onActive={setActive}
-          />
+        <div className="stack">
+          <div className="no-print">
+            <DamageViewer
+              photos={report.photos}
+              selectedPhotoId={photoId}
+              onSelectPhoto={setPhotoId}
+              active={active}
+              onActive={setActive}
+            />
+          </div>
+          <section className="card">
+            <h2>Damage summary</h2>
+            {report.damages.length === 0 ? (
+              <p className="muted">No damage detected.</p>
+            ) : (
+              <div className="table-scroll">
+                <table className="table">
+                  <thead>
+                    <tr><th>Part</th><th>Damage type</th><th>Severity</th><th className="r">Score</th><th>Seen in</th></tr>
+                  </thead>
+                  <tbody>
+                    {report.damages.map((d) => (
+                      <tr key={d.id}>
+                        <td>{d.part}</td>
+                        <td>{d.type}</td>
+                        <td><Badge tone={levelTone(d.severity)}>{d.severity}</Badge></td>
+                        <td className="r num">{d.score}</td>
+                        <td className="muted">
+                          {d.photoIds.map((pid) => `Photo ${report.photos.findIndex((p) => p.id === pid) + 1}`).join(', ')}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
         </div>
         <div className="stack">
           <VehicleCard vehicle={report.vehicle} />
@@ -186,33 +215,6 @@ export function ReportPage() {
         ))}
       </section>
 
-      <section className="card">
-        <h2>Damage summary</h2>
-        {report.damages.length === 0 ? (
-          <p className="muted">No damage detected.</p>
-        ) : (
-          <div className="table-scroll">
-            <table className="table">
-              <thead>
-                <tr><th>Part</th><th>Damage type</th><th>Severity</th><th className="r">Score</th><th>Seen in</th></tr>
-              </thead>
-              <tbody>
-                {report.damages.map((d) => (
-                  <tr key={d.id}>
-                    <td>{d.part}</td>
-                    <td>{d.type}</td>
-                    <td><Badge tone={levelTone(d.severity)}>{d.severity}</Badge></td>
-                    <td className="r num">{d.score}</td>
-                    <td className="muted">
-                      {d.photoIds.map((pid) => `Photo ${report.photos.findIndex((p) => p.id === pid) + 1}`).join(', ')}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
     </div>
   );
 }
