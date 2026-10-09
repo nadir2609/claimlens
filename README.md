@@ -45,7 +45,7 @@ In every mode the image quality check, severity score, cost estimate, fraud scor
 6. **Fraud**: photos reused from earlier claims, editing software in EXIF, capture dates far apart, model-reported inconsistencies, unusually high totals.
 7. **Recommendation**: Fast-track approval, Standard review, or Manual Adjuster Review Required.
 
-The exact weights, prices and thresholds are in [the design spec](docs/superpowers/specs/2026-10-09-insurance-damage-estimator-design.md) and in `server/src/pipeline/`.
+The exact weights, prices and thresholds are in `server/src/pipeline/`.
 
 ## Part prices
 
