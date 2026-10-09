@@ -44,7 +44,7 @@ interface VisionAnalyzer {
 }
 ```
 
-- `ClaudeAnalyzer` is used when `ANTHROPIC_API_KEY` is set. It sends all photos (resized to at most 1568 px on the long side) in one request and forces a JSON result through a tool schema.
+- `ClaudeAnalyzer` is used when `ANTHROPIC_API_KEY` is set. It sends all photos (resized to at most 1568 px on the long side) in one request and gets a schema-constrained JSON result through structured outputs (`messages.parse`); the model rejects forced tool calls.
 - `DemoAnalyzer` is used otherwise. It is deterministic: results are seeded from the photos' SHA-256 hashes, so the same photos always give the same report. The UI shows a "Demo mode" badge and the report records `analysisMode: "demo"`.
 - If the key is set and the Claude call fails, the claim is marked `failed` with the error message and a Retry button. It does not silently switch to demo data.
 
@@ -167,7 +167,7 @@ The brief names fraud alerts without defining them. Signals and points:
 
 | Signal | Source | Points |
 |---|---|---|
-| Photo duplicates one in an earlier claim | SHA-256 match, or 64-bit dHash within Hamming distance 6 | 40 |
+| Photo duplicates one in an earlier claim (lower claim number) | SHA-256 match, or 64-bit dHash within Hamming distance 6 | 40 |
 | Photos show different vehicles | Analyzer observation | 35 |
 | Photo of a screen or printed photo | Analyzer observation | 30 |
 | Damage inconsistent between angles | Analyzer observation | 20 |
@@ -199,7 +199,7 @@ The report states which conditions produced the recommendation.
 | POST | `/api/claims/:id/retry` | Rerun the pipeline after a failure. |
 | GET | `/api/claims/:id` | Full report JSON. |
 | GET | `/api/claims` | Claim list for the adjuster portal. |
-| PATCH | `/api/claims/:id` | Set status: `pending`, `approved` or `rejected`. |
+| PATCH | `/api/claims/:id` | Set status: `pending`, `approved` or `rejected`. Returns 409 until the analysis has finished. Re-analysing a claim resets its status to `pending`. |
 | GET | `/api/config` | `{ analysisMode }` for the demo-mode badge. |
 
 Claim IDs look like `CLM-2026-0001`. The full report is stored as one JSON column

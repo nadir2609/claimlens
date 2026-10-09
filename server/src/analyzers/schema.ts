@@ -58,20 +58,26 @@ export function sanitizeVision(raw: unknown, photoIds: string[]): VisionResult {
 
   const byId = new Map<string, PhotoAnalysis>();
   for (const p of raw.photos) {
-    if (!isRecord(p) || typeof p.photoId !== 'string' || !photoIds.includes(p.photoId) || byId.has(p.photoId)) continue;
+    if (!isRecord(p) || typeof p.photoId !== 'string') continue;
+    // Models sometimes echo the label ("Photo id: p1") instead of the bare id.
+    const photoId = photoIds.includes(p.photoId) ? p.photoId : (p.photoId.match(/p\d+/)?.[0] ?? '');
+    if (!photoIds.includes(photoId) || byId.has(photoId)) continue;
     const angle = z.enum(ANGLES).safeParse(p.angle);
     const damages = (Array.isArray(p.damages) ? p.damages : []).map(cleanDamage).filter((d): d is Damage => d !== null);
     const visible = new Set<Part>(
       (Array.isArray(p.visibleParts) ? p.visibleParts : []).filter((x): x is Part => PARTS.includes(x as Part)),
     );
     for (const d of damages) visible.add(d.part);
-    byId.set(p.photoId, {
-      photoId: p.photoId,
+    byId.set(photoId, {
+      photoId,
       angle: angle.success ? angle.data : 'other',
       visibleParts: PARTS.filter((part) => visible.has(part)),
       damages,
     });
   }
+
+  // Entries came back but none belong to this claim: reporting "no damage" would be wrong.
+  if (raw.photos.length > 0 && byId.size === 0) throw new Error('Model returned an invalid analysis');
 
   const photos = photoIds.map((id) => byId.get(id) ?? { photoId: id, angle: 'other' as const, visibleParts: [], damages: [] });
   const fraudObservations: FraudObservation[] = (Array.isArray(raw.fraudObservations) ? raw.fraudObservations : [])

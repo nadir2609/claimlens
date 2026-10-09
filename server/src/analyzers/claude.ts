@@ -33,7 +33,7 @@ export class ClaudeAnalyzer implements VisionAnalyzer {
   constructor(private readonly client: ParseClient, private readonly model: string) {}
 
   static fromApiKey(apiKey: string, model: string): ClaudeAnalyzer {
-    return new ClaudeAnalyzer(new Anthropic({ apiKey }) as unknown as ParseClient, model);
+    return new ClaudeAnalyzer(new Anthropic({ apiKey, timeout: 120_000, maxRetries: 1 }) as unknown as ParseClient, model);
   }
 
   async analyze(photos: PhotoInput[]): Promise<VisionResult> {
@@ -44,13 +44,23 @@ export class ClaudeAnalyzer implements VisionAnalyzer {
     }
     content.push({ type: 'text', text: `Assess these ${photos.length} photos. Return one entry per photo id.` });
 
-    const response = await this.client.messages.parse({
-      model: this.model,
-      max_tokens: 16000,
-      system: SYSTEM,
-      messages: [{ role: 'user', content }],
-      output_config: { effort: 'medium', format: zodOutputFormat(VisionOutputSchema) },
-    });
+    let response: Awaited<ReturnType<ParseClient['messages']['parse']>>;
+    try {
+      response = await this.client.messages.parse({
+        model: this.model,
+        max_tokens: 16000,
+        system: SYSTEM,
+        messages: [{ role: 'user', content }],
+        output_config: { effort: 'medium', format: zodOutputFormat(VisionOutputSchema) },
+      });
+    } catch (err) {
+      if (err instanceof Anthropic.AuthenticationError) throw new Error('Claude API key was rejected. Check ANTHROPIC_API_KEY.');
+      if (err instanceof Anthropic.RateLimitError) throw new Error('Claude API rate limit reached. Retry in a moment.');
+      if (err instanceof Anthropic.APIConnectionError) throw new Error('Could not reach the Claude API. Check the network and retry.');
+      if (err instanceof Anthropic.APIError) throw new Error(`Claude API error (${err.status ?? 'unknown'}): ${err.message}`);
+      // Anything else is the SDK failing to parse the structured output (for example a truncated response).
+      throw new Error('Model returned an invalid analysis');
+    }
 
     if (response.stop_reason === 'refusal') throw new Error('The model declined to analyse these photos');
     if (!response.parsed_output) throw new Error('Model returned an invalid analysis');

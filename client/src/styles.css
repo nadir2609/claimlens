@@ -197,7 +197,9 @@ img { max-width: 100%; }
 .viewer-meta { display: flex; gap: 1rem; flex-wrap: wrap; margin: 0.6rem 0; }
 .damage-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.3rem; }
 .damage-list li { display: flex; align-items: center; gap: 0.7rem; padding: 0.45rem 0.6rem; border-radius: 8px; border: 1px solid var(--border); cursor: default; }
+.damage-list li { cursor: pointer; }
 .damage-list li.damage-active, .damage-list li:focus-visible { background: var(--surface-2); border-color: var(--accent); }
+.damage-list li.damage-pinned { box-shadow: inset 3px 0 0 var(--accent); }
 .damage-num { width: 22px; height: 22px; border-radius: 50%; background: var(--text); color: var(--surface); font-size: 0.75rem; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; flex: none; }
 .damage-main { flex: 1; min-width: 0; }
 .damage-note { display: block; }

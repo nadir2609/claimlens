@@ -154,13 +154,13 @@ export function ClaimsPage() {
                   <td className="muted nowrap">{shortDate(c.createdAt)}</td>
                   <td>
                     <div className="row-buttons">
-                      <button type="button" className="btn btn-small btn-good" disabled={c.status === 'approved'} onClick={() => changeStatus(c.id, 'approved')}>
+                      <button type="button" className="btn btn-small btn-good" disabled={c.state !== 'done' || c.status === 'approved'} onClick={() => changeStatus(c.id, 'approved')}>
                         Approve<span className="visually-hidden"> {c.id}</span>
                       </button>
-                      <button type="button" className="btn btn-small btn-bad" disabled={c.status === 'rejected'} onClick={() => changeStatus(c.id, 'rejected')}>
+                      <button type="button" className="btn btn-small btn-bad" disabled={c.state !== 'done' || c.status === 'rejected'} onClick={() => changeStatus(c.id, 'rejected')}>
                         Reject<span className="visually-hidden"> {c.id}</span>
                       </button>
-                      <button type="button" className="btn btn-small btn-ghost" disabled={c.status === 'pending'} onClick={() => changeStatus(c.id, 'pending')}>
+                      <button type="button" className="btn btn-small btn-ghost" disabled={c.state !== 'done' || c.status === 'pending'} onClick={() => changeStatus(c.id, 'pending')}>
                         Reset<span className="visually-hidden"> {c.id}</span>
                       </button>
                     </div>

@@ -55,6 +55,16 @@ describe('sanitizeVision', () => {
     expect(r.photos[1]).toEqual({ photoId: 'p2', angle: 'other', visibleParts: [], damages: [] });
   });
 
+  it('accepts photo ids the model wrapped in extra text', () => {
+    const r = sanitizeVision({ vehicle, photos: [{ photoId: 'Photo id: p1', angle: 'front', visibleParts: ['Hood'], damages: [damage()] }], fraudObservations: [] }, ['p1']);
+    expect(r.photos[0].damages).toHaveLength(1);
+  });
+
+  it('fails rather than reporting no damage when no returned photo id matches', () => {
+    expect(() => sanitizeVision({ vehicle, photos: [{ photoId: 'first', angle: 'front', visibleParts: [], damages: [damage()] }], fraudObservations: [] }, ['p1']))
+      .toThrow('Model returned an invalid analysis');
+  });
+
   it('treats a damaged part as visible, and clamps confidence', () => {
     const r = sanitizeVision({ vehicle: { ...vehicle, confidence: 7 }, photos: [{ photoId: 'p1', angle: 'front', visibleParts: [], damages: [damage()] }], fraudObservations: [] }, ['p1']);
     expect(r.photos[0].visibleParts).toEqual(['Hood']);
@@ -125,7 +135,13 @@ describe('ClaudeAnalyzer', () => {
     const image = await sceneJpeg(1, 900, 700);
     const refused = new ClaudeAnalyzer({ messages: { parse: vi.fn().mockResolvedValue({ stop_reason: 'refusal', parsed_output: null }) } }, 'm');
     await expect(refused.analyze([{ id: 'p1', sha256: 'aa', image }])).rejects.toThrow(/declined/i);
-    const empty = new ClaudeAnalyzer({ messages: { parse: vi.fn().mockResolvedValue({ stop_reason: 'max_tokens', parsed_output: null }) } }, 'm');
+    const empty = new ClaudeAnalyzer({ messages: { parse: vi.fn().mockResolvedValue({ stop_reason: 'end_turn', parsed_output: null }) } }, 'm');
     await expect(empty.analyze([{ id: 'p1', sha256: 'aa', image }])).rejects.toThrow(/invalid analysis/i);
+  });
+
+  it('turns an SDK parse failure into a readable error', async () => {
+    const image = await sceneJpeg(1, 900, 700);
+    const broken = new ClaudeAnalyzer({ messages: { parse: vi.fn().mockRejectedValue(new Error('Failed to parse structured output: SyntaxError: Unexpected end of JSON input')) } }, 'm');
+    await expect(broken.analyze([{ id: 'p1', sha256: 'aa', image }])).rejects.toThrow('Model returned an invalid analysis');
   });
 });

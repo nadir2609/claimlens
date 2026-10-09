@@ -28,6 +28,7 @@ export async function runPipeline(deps: PipelineDeps, claimId: string): Promise<
 
   events.start(claimId);
   report.state = 'processing';
+  report.status = 'pending';
   report.error = null;
   report.analysisMode = analyzer.mode;
   store.save(report);
@@ -65,7 +66,7 @@ export async function runPipeline(deps: PipelineDeps, claimId: string): Promise<
     report.cost = await stage('cost', () => estimateCost(report.damages, report.vehicle.make));
     report.fraud = await stage('fraud', () => assessFraud({
       photos: report.photos.map((p) => ({ id: p.id, sha256: p.sha256, dhash: p.dhash, ...p.exif })),
-      priorHashes: store.hashesExcluding(claimId),
+      priorHashes: store.earlierHashes(claimId),
       observations: vision.fraudObservations,
       totalCost: report.cost.total,
     }));

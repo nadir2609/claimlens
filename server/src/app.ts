@@ -33,7 +33,7 @@ async function prepareAll(files: Express.Multer.File[]): Promise<Prepared[]> {
 
 export function createApp(deps: PipelineDeps & { clientDist?: string }): express.Express {
   const app = express();
-  const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024, files: 20 } });
+  const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024, files: 20 }, defParamCharset: 'utf8' });
   app.use(express.json());
   app.use('/uploads', express.static(deps.uploadsDir));
 
@@ -51,8 +51,17 @@ export function createApp(deps: PipelineDeps & { clientDist?: string }): express
     }));
   };
 
+  // Claims with an upload or a run in flight. Taken synchronously so two requests cannot both proceed.
+  const busy = new Set<string>();
+  const lock = (claimId: string) => {
+    if (busy.has(claimId)) throw new HttpError(409, 'This claim is still being analysed.');
+    busy.add(claimId);
+  };
   const start = (claimId: string) => {
-    void runPipeline(deps, claimId).catch((err) => console.error(`Pipeline crashed for ${claimId}`, err));
+    busy.add(claimId);
+    void runPipeline(deps, claimId)
+      .catch((err) => console.error(`Pipeline crashed for ${claimId}`, err))
+      .finally(() => busy.delete(claimId));
   };
 
   const claimOr404 = (req: Request) => {
@@ -77,11 +86,22 @@ export function createApp(deps: PipelineDeps & { clientDist?: string }): express
         prepared.map((p) => ({ filename: p.filename, quality: p.image.quality }));
       throw new HttpError(400, `At least 4 photos must pass the quality check (${passing} passed).`, { photos });
     }
+    // Insert before the first await so a concurrent request cannot be issued the same id.
     const id = deps.store.nextId();
     deps.store.insert(emptyReport(id, new Date().toISOString(), deps.analyzer.mode, []));
-    const report = deps.store.get(id)!;
-    report.photos = await storePhotos(id, 0, prepared);
-    deps.store.save(report);
+    busy.add(id);
+    try {
+      const report = deps.store.get(id)!;
+      report.photos = await storePhotos(id, 0, prepared);
+      deps.store.save(report);
+    } catch (err) {
+      busy.delete(id);
+      const report = deps.store.get(id)!;
+      report.state = 'failed';
+      report.error = 'The photos could not be saved. Submit the claim again.';
+      deps.store.save(report);
+      throw err;
+    }
     start(id);
     res.status(201).json({ id });
   });
@@ -93,17 +113,22 @@ export function createApp(deps: PipelineDeps & { clientDist?: string }): express
     if (report.photos.length + files.length > MAX_PHOTOS) {
       throw new HttpError(400, `A claim can hold at most 10 photos (this one has ${report.photos.length}).`);
     }
-    if (report.state === 'processing') throw new HttpError(409, 'This claim is still being analysed.');
-    const prepared = await prepareAll(files);
-    report.photos.push(...(await storePhotos(report.id, report.photos.length, prepared)));
-    deps.store.save(report);
+    lock(report.id);
+    try {
+      const prepared = await prepareAll(files);
+      report.photos.push(...(await storePhotos(report.id, report.photos.length, prepared)));
+      deps.store.save(report);
+    } catch (err) {
+      busy.delete(report.id);
+      throw err;
+    }
     start(report.id);
     res.json({ id: report.id });
   });
 
   app.post('/api/claims/:id/retry', (req, res) => {
     const report = claimOr404(req);
-    if (report.state === 'processing') throw new HttpError(409, 'This claim is still being analysed.');
+    lock(report.id);
     start(report.id);
     res.json({ id: report.id });
   });
@@ -111,9 +136,12 @@ export function createApp(deps: PipelineDeps & { clientDist?: string }): express
   app.get('/api/claims/:id', (req, res) => { res.json(claimOr404(req)); });
 
   app.patch('/api/claims/:id', (req, res) => {
-    claimOr404(req);
+    const report = claimOr404(req);
     const status = req.body?.status as ClaimStatus;
     if (!CLAIM_STATUSES.includes(status)) throw new HttpError(400, 'Status must be pending, approved or rejected.');
+    if (busy.has(report.id) || report.state !== 'done') {
+      throw new HttpError(409, 'A decision can be recorded once the analysis has finished.');
+    }
     res.json(deps.store.setStatus(String(req.params.id), status));
   });
 

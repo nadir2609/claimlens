@@ -154,6 +154,43 @@ describe('claims API', () => {
     expect((await upload(`/api/claims/${id}/photos`, await scenes([1]))).status).toBe(404);
   });
 
+  it('refuses decisions, retries and extra photos while a claim is being analysed', async () => {
+    let release = () => {};
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const demo = deps.analyzer;
+    deps.analyzer = { mode: 'demo', analyze: async (photos) => { await gate; return demo.analyze(photos); } };
+    app = createApp(deps);
+    const id = (await upload('/api/claims', await scenes([1, 2, 3, 4]))).body.id;
+
+    expect((await request(app).patch(`/api/claims/${id}`).send({ status: 'approved' })).status).toBe(409);
+    expect((await request(app).post(`/api/claims/${id}/retry`)).status).toBe(409);
+    expect((await upload(`/api/claims/${id}/photos`, await scenes([5]))).status).toBe(409);
+
+    release();
+    await finished(id);
+    expect((await request(app).patch(`/api/claims/${id}`).send({ status: 'approved' })).status).toBe(200);
+  });
+
+  it('accepts only one of two simultaneous add-photo requests', async () => {
+    const id = (await upload('/api/claims', await scenes([1, 2, 3, 4]))).body.id;
+    await finished(id);
+    const [a, b] = await Promise.all([
+      upload(`/api/claims/${id}/photos`, await scenes([5])),
+      upload(`/api/claims/${id}/photos`, await scenes([6])),
+    ]);
+    expect([a.status, b.status].sort()).toEqual([200, 409]);
+    await finished(id);
+    expect((await request(app).get(`/api/claims/${id}`)).body.photos).toHaveLength(5);
+  });
+
+  it('keeps non-ASCII filenames intact', async () => {
+    const files = await scenes([1, 2, 3, 4]);
+    files[0].name = 'şəkil-ön.jpg';
+    const id = (await upload('/api/claims', files)).body.id;
+    await finished(id);
+    expect((await request(app).get(`/api/claims/${id}`)).body.photos[0].filename).toBe('şəkil-ön.jpg');
+  });
+
   it('reports the analysis mode', async () => {
     expect((await request(app).get('/api/config')).body).toEqual({ analysisMode: 'demo' });
   });

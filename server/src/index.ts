@@ -6,8 +6,12 @@ import { EventBus } from './events';
 import { ClaimStore } from './store';
 
 const analyzer = createAnalyzer(config);
+const store = new ClaimStore(join(config.dataDir, 'claims.db'));
+const interrupted = store.failInterrupted();
+if (interrupted) console.log(`Marked ${interrupted} interrupted claim(s) as failed; they can be retried.`);
+
 const app = createApp({
-  store: new ClaimStore(join(config.dataDir, 'claims.db')),
+  store,
   analyzer,
   events: new EventBus(),
   uploadsDir: config.uploadsDir,

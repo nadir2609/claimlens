@@ -23,7 +23,18 @@ export function DamageViewer({ photos, selectedPhotoId, onSelectPhoto, active, o
   const [size, setSize] = useState({ w: 0, h: 0 });
   const [pointer, setPointer] = useState<{ x: number; y: number } | null>(null);
 
-  const activeIndex = active && active.photoId === photo.id ? active.index : null;
+  // Hover highlights a box; a click pins it so the highlight survives the pointer leaving (and works on touch).
+  const [pinned, setPinned] = useState<number | null>(null);
+  const rows = useRef<(HTMLLIElement | null)[]>([]);
+  useEffect(() => setPinned(null), [photo.id]);
+
+  const hoverIndex = active && active.photoId === photo.id ? active.index : null;
+  const activeIndex = hoverIndex ?? pinned;
+
+  const togglePin = (index: number) => {
+    setPinned((current) => (current === index ? null : index));
+    rows.current[index]?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  };
 
   useEffect(() => {
     const el = img.current;
@@ -89,10 +100,17 @@ export function DamageViewer({ photos, selectedPhotoId, onSelectPhoto, active, o
     const hit = hitTest(boxes, x, y);
     setPointer(hit === null ? null : { x, y });
     const index = hit === null ? null : Number(hit);
-    if (index !== activeIndex) onActive(index === null ? null : { photoId: photo.id, index });
+    if (index !== hoverIndex) onActive(index === null ? null : { photoId: photo.id, index });
   };
 
-  const tip = pointer && activeIndex !== null ? photo.damages[activeIndex] : null;
+  const onCanvasClick = (e: PointerEvent<HTMLCanvasElement>) => {
+    const bounds = e.currentTarget.getBoundingClientRect();
+    const hit = hitTest(boxes, e.clientX - bounds.left, e.clientY - bounds.top);
+    if (hit === null) setPinned(null);
+    else togglePin(Number(hit));
+  };
+
+  const tip = pointer && hoverIndex !== null ? photo.damages[hoverIndex] : null;
 
   return (
     <section className="card viewer">
@@ -126,8 +144,9 @@ export function DamageViewer({ photos, selectedPhotoId, onSelectPhoto, active, o
           />
           <canvas
             ref={canvas}
-            style={{ cursor: activeIndex !== null && pointer ? 'pointer' : 'default' }}
+            style={{ cursor: hoverIndex !== null && pointer ? 'pointer' : 'default' }}
             onPointerMove={onMove}
+            onPointerUp={onCanvasClick}
             onPointerLeave={() => { setPointer(null); onActive(null); }}
             aria-hidden="true"
           />
@@ -164,8 +183,15 @@ export function DamageViewer({ photos, selectedPhotoId, onSelectPhoto, active, o
           {photo.damages.map((d, i) => (
             <li
               key={i}
+              ref={(el) => { rows.current[i] = el; }}
               tabIndex={0}
-              className={i === activeIndex ? 'damage-active' : ''}
+              role="button"
+              aria-pressed={i === pinned}
+              className={`${i === activeIndex ? 'damage-active' : ''}${i === pinned ? ' damage-pinned' : ''}`}
+              onClick={() => togglePin(i)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); togglePin(i); }
+              }}
               onMouseEnter={() => onActive({ photoId: photo.id, index: i })}
               onMouseLeave={() => onActive(null)}
               onFocus={() => onActive({ photoId: photo.id, index: i })}

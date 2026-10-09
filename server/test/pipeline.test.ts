@@ -61,11 +61,22 @@ describe('ClaimStore', () => {
     expect(deps.store.list()[0].status).toBe('approved');
   });
 
-  it('never returns a claim’s own hashes as prior hashes', async () => {
+  it('returns hashes from earlier claims only, never its own or later ones', async () => {
     const a = await addClaim([1, 2, 3, 4]);
     const b = await addClaim([5, 6, 7, 8]);
-    expect(deps.store.hashesExcluding(a).every((h) => h.claimId === b)).toBe(true);
-    expect(deps.store.hashesExcluding(a)).toHaveLength(4);
+    expect(deps.store.earlierHashes(a)).toEqual([]);
+    expect(deps.store.earlierHashes(b)).toHaveLength(4);
+    expect(deps.store.earlierHashes(b).every((h) => h.claimId === a)).toBe(true);
+  });
+
+  it('marks runs interrupted by a restart as failed so they can be retried', async () => {
+    const id = await addClaim([1, 2, 3, 4]);
+    expect(deps.store.get(id)!.state).toBe('processing');
+    expect(deps.store.failInterrupted()).toBe(1);
+    const r = deps.store.get(id)!;
+    expect(r.state).toBe('failed');
+    expect(r.error).toMatch(/interrupted/i);
+    expect(deps.store.failInterrupted()).toBe(0);
   });
 });
 
@@ -140,6 +151,17 @@ describe('runPipeline', () => {
     const fraud = deps.store.get(second)!.fraud;
     expect(fraud.signals.find((s) => s.kind === 'duplicate_photo')?.detail).toContain(first);
     expect(fraud.score).toBeGreaterThanOrEqual(40);
+
+    await runPipeline(deps, first);
+    expect(deps.store.get(first)!.fraud.signals.some((s) => s.kind === 'duplicate_photo')).toBe(false);
+  });
+
+  it('resets an earlier decision to pending when a claim is re-analysed', async () => {
+    const id = await addClaim([1, 2, 3, 4]);
+    await runPipeline(deps, id);
+    deps.store.setStatus(id, 'approved');
+    await runPipeline(deps, id);
+    expect(deps.store.get(id)!.status).toBe('pending');
   });
 
   it('records a failure instead of throwing, and a rerun recovers', async () => {

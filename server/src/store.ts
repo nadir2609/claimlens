@@ -74,11 +74,28 @@ export class ClaimStore {
     return report;
   }
 
-  hashesExcluding(claimId: string): PriorHash[] {
+  /** Photo hashes from claims submitted before this one. */
+  earlierHashes(claimId: string): PriorHash[] {
     const rows = this.db.prepare(
-      'SELECT claim_id AS claimId, photo_id AS photoId, sha256, dhash FROM photo_hashes WHERE claim_id <> ?',
+      `SELECT h.claim_id AS claimId, h.photo_id AS photoId, h.sha256, h.dhash
+       FROM photo_hashes h
+       JOIN claims c ON c.id = h.claim_id
+       JOIN claims me ON me.id = ?
+       WHERE c.year < me.year OR (c.year = me.year AND c.seq < me.seq)`,
     ).all(claimId);
     return rows as unknown as PriorHash[];
+  }
+
+  /** Runs live only in memory, so any claim still "processing" at startup was cut off. Returns how many were marked. */
+  failInterrupted(): number {
+    const rows = this.db.prepare("SELECT id FROM claims WHERE state = 'processing'").all() as { id: string }[];
+    for (const { id } of rows) {
+      const report = this.get(id)!;
+      report.state = 'failed';
+      report.error = 'Analysis was interrupted before it finished. Retry to run it again.';
+      this.save(report);
+    }
+    return rows.length;
   }
 
   close(): void { this.db.close(); }
