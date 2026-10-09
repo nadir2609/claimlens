@@ -90,6 +90,7 @@ function ListingLinks({ listings }: { listings: PartListing[] }) {
         <li key={l.url}>
           <a href={l.url} target="_blank" rel="noreferrer">{l.title}</a>{' '}
           <span className="muted">({l.source})</span> <span className="num">{money(l.price)}</span>
+          {l.listedPrice && <span className="muted"> ({l.listedPrice})</span>}
         </li>
       ))}
     </ul>
@@ -98,7 +99,7 @@ function ListingLinks({ listings }: { listings: PartListing[] }) {
 
 /**
  * Shows where a replaced part's price came from, with links a person can open to check:
- * the cheapest listing, other listings, the same part for other vehicles, and the search pages themselves.
+ * the cheapest listing, other listings, the same part for other models or vehicles, and the search pages themselves.
  */
 function PartSource({ line }: { line: CostLine }) {
   // Reports saved before live prices existed have none of these fields.
@@ -115,7 +116,7 @@ function PartSource({ line }: { line: CostLine }) {
         <div>
           Cheapest listing:{' '}
           <a href={line.partListing.url} target="_blank" rel="noreferrer">{line.partListing.title}</a>{' '}
-          <span className="muted">({line.partListing.source})</span>
+          <span className="muted">({line.partListing.source}{line.partListing.listedPrice ? `, listed at ${line.partListing.listedPrice}` : ''})</span>
         </div>
       ) : (
         <div className="muted">Estimated price: no listing found for this vehicle</div>
@@ -128,7 +129,7 @@ function PartSource({ line }: { line: CostLine }) {
       )}
       {similar.length > 0 && (
         <div>
-          Same part for other vehicles, for reference:
+          Same part for other models or vehicles, for reference only:
           <ListingLinks listings={similar} />
         </div>
       )}
@@ -205,9 +206,10 @@ export function CostTable({ cost }: { cost: CostEstimate }) {
         </div>
       )}
       <p className="muted small">
-        Parts are charged only when an item is replaced, once per part. Where RockAuto (aftermarket) or
-        PartSouq (genuine) lists the part for this vehicle, the cheapest listing is used and linked; check its fitment
-        note (trim, side) before relying on it. Otherwise
+        Parts are charged only when an item is replaced, once per part. Where ehtiyathisseleri.az or avtopro.az lists
+        the part for this make and model, the cheapest listing is used and linked, converted from manat at 1.70 AZN
+        per dollar; otherwise RockAuto (aftermarket) and PartSouq (genuine) are tried. Open the listing to check
+        year, trim and side before relying on it. If no site lists the part,
         the part price is an estimate from a fixed table at the {cost.makeTier} make tier
         (×{cost.tierMultiplier.toFixed(1)}). Labour ({money(cost.laborRate)} per hour) and paint are placeholder rates.
         Prices exclude shipping and tax.

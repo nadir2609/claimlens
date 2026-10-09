@@ -6,7 +6,7 @@ import {
   parseListings, slug, toOffer, toPartListing, type RockListing,
 } from './rockauto';
 
-/** Returns a page's HTML. The real implementation is Firecrawl; tests substitute a fake. */
+/** Returns a page's body: HTML, or JSON text from an API. Tests substitute a fake. */
 export interface PageFetcher {
   html(url: string): Promise<string>;
 }
@@ -22,6 +22,18 @@ export interface PartLookup {
 
 const CACHE_MS = 24 * 60 * 60 * 1000;
 const known = (value: string) => value.trim() !== '' && value.trim().toLowerCase() !== 'unknown';
+
+/** Plain HTTP, for sites that serve their pages to any client. */
+export class DirectFetcher implements PageFetcher {
+  async html(url: string): Promise<string> {
+    const res = await fetch(url, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; ClaimLens/1.0)', Accept: 'text/html,application/json' },
+      signal: AbortSignal.timeout(20_000),
+    });
+    if (!res.ok) throw new Error(`${new URL(url).hostname} returned ${res.status}`);
+    return res.text();
+  }
+}
 
 export class FirecrawlFetcher implements PageFetcher {
   /** `retryDelayMs` is how long to wait after a rate-limit response; the free plan allows few requests per minute. */
@@ -123,6 +135,34 @@ export class RockAutoLookup implements PartLookup {
       console.warn(`Part price lookup could not read ${url}: ${err instanceof Error ? err.message : err}`);
       return null;
     }
+  }
+}
+
+/**
+ * Asks each source in turn and stops at the first that has an offer, so a later source is only used (and only costs
+ * time or credits) when the earlier ones list nothing. Links and reference listings from every source asked are kept.
+ */
+export class FallbackLookup implements PartLookup {
+  constructor(private readonly sources: PartLookup[]) {}
+
+  async find(part: Part, vehicle: VehicleInfo): Promise<PartSearchResult | null> {
+    const similar: PartListing[] = [];
+    const searchLinks: SearchLink[] = [];
+    let asked = false;
+    for (const source of this.sources) {
+      let found: PartSearchResult | null = null;
+      try {
+        found = await source.find(part, vehicle);
+      } catch (err) {
+        console.warn(`Part price lookup failed for ${part}: ${err instanceof Error ? err.message : err}`);
+      }
+      if (!found) continue;
+      asked = true;
+      searchLinks.push(...found.searchLinks);
+      if (found.offer) return { offer: found.offer, similar: [], searchLinks };
+      similar.push(...found.similar);
+    }
+    return asked ? { offer: null, similar, searchLinks } : null;
   }
 }
 

@@ -77,7 +77,10 @@ export interface DamageItem {
 
 export interface PartListing {
   title: string;
+  /** In US dollars. */
   price: number;
+  /** The price as the site shows it, when that is not in US dollars: for example "1100 AZN". */
+  listedPrice?: string;
   url: string;
   /** The site the listing came from, for example "rockauto.com". */
   source: string;
