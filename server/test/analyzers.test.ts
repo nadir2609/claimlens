@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import { PARTS } from '@claimlens/shared';
 import { ClaudeAnalyzer } from '../src/analyzers/claude';
+import { createAnalyzer } from '../src/analyzers';
 import { DemoAnalyzer } from '../src/analyzers/demo';
+import { GeminiAnalyzer } from '../src/analyzers/gemini';
 import { sanitizeVision } from '../src/analyzers/schema';
 import { assessCoverage } from '../src/pipeline/coverage';
 import { sceneJpeg } from './helpers';
@@ -143,5 +145,61 @@ describe('ClaudeAnalyzer', () => {
     const image = await sceneJpeg(1, 900, 700);
     const broken = new ClaudeAnalyzer({ messages: { parse: vi.fn().mockRejectedValue(new Error('Failed to parse structured output: SyntaxError: Unexpected end of JSON input')) } }, 'm');
     await expect(broken.analyze([{ id: 'p1', sha256: 'aa', image }])).rejects.toThrow('Model returned an invalid analysis');
+  });
+});
+
+describe('GeminiAnalyzer', () => {
+  const geminiOutput = {
+    vehicle,
+    photos: [{
+      photoId: 'p1', angle: 'front', visibleParts: ['Hood'],
+      damages: [{ part: 'Hood', type: 'Dent', severity: 'Medium', box_2d: [300, 200, 400, 400], confidence: 0.8, note: 'n' }],
+    }],
+    fraudObservations: [],
+  };
+  const fake = (generateContent: (params: any) => Promise<any>) => new GeminiAnalyzer({ models: { generateContent } }, 'gemini-2.5-flash');
+
+  it('sends every photo with its id, asks for JSON, and converts Gemini boxes to [x, y, width, height]', async () => {
+    const generateContent = vi.fn().mockResolvedValue({ text: JSON.stringify(geminiOutput) });
+    const analyzer = fake(generateContent);
+    const image = await sceneJpeg(1, 900, 700);
+    const r = await analyzer.analyze([{ id: 'p1', sha256: 'aa', image }, { id: 'p2', sha256: 'bb', image }]);
+
+    expect(analyzer.mode).toBe('gemini');
+    expect(r.photos.map((p) => p.photoId)).toEqual(['p1', 'p2']);
+    // box_2d is [ymin, xmin, ymax, xmax] on a 0-1000 scale.
+    expect(r.photos[0].damages[0].bbox).toEqual([0.2, 0.3, 0.2, 0.1]);
+
+    const req = generateContent.mock.calls[0][0];
+    expect(req.model).toBe('gemini-2.5-flash');
+    expect(req.config.responseMimeType).toBe('application/json');
+    expect(req.config.responseJsonSchema).toBeTypeOf('object');
+    expect(req.contents.filter((p: { inlineData?: { mimeType: string } }) => p.inlineData?.mimeType === 'image/jpeg')).toHaveLength(2);
+    expect(req.contents.some((p: { text?: string }) => p.text === 'Photo id: p2')).toBe(true);
+  });
+
+  it('drops a damage whose box is malformed but keeps the rest', async () => {
+    const out = structuredClone(geminiOutput);
+    out.photos[0].damages.push({ ...out.photos[0].damages[0], box_2d: [1, 2] });
+    const r = await fake(vi.fn().mockResolvedValue({ text: JSON.stringify(out) })).analyze([{ id: 'p1', sha256: 'aa', image: await sceneJpeg(1, 900, 700) }]);
+    expect(r.photos[0].damages).toHaveLength(1);
+  });
+
+  it('fails clearly on unreadable output, a blocked prompt, a rate limit and a bad key', async () => {
+    const photos = [{ id: 'p1', sha256: 'aa', image: await sceneJpeg(1, 900, 700) }];
+    await expect(fake(vi.fn().mockResolvedValue({ text: '{"vehicle": ' })).analyze(photos)).rejects.toThrow('Model returned an invalid analysis');
+    await expect(fake(vi.fn().mockResolvedValue({ text: undefined, promptFeedback: { blockReason: 'SAFETY' } })).analyze(photos)).rejects.toThrow(/declined/i);
+    await expect(fake(vi.fn().mockRejectedValue(Object.assign(new Error('quota'), { status: 429 }))).analyze(photos)).rejects.toThrow(/rate limit/i);
+    await expect(fake(vi.fn().mockRejectedValue(Object.assign(new Error('API key not valid'), { status: 400 }))).analyze(photos)).rejects.toThrow(/GEMINI_API_KEY/);
+  });
+});
+
+describe('createAnalyzer', () => {
+  const models = { model: 'claude-opus-5-5', geminiModel: 'gemini-2.5-flash' };
+
+  it('prefers Gemini, then Claude, then demo mode, by which keys are set', () => {
+    expect(createAnalyzer({ ...models, geminiApiKey: 'g', apiKey: 'a' }).mode).toBe('gemini');
+    expect(createAnalyzer({ ...models, geminiApiKey: undefined, apiKey: 'a' }).mode).toBe('claude');
+    expect(createAnalyzer({ ...models, geminiApiKey: undefined, apiKey: undefined }).mode).toBe('demo');
   });
 });

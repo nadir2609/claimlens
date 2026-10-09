@@ -9,6 +9,8 @@ try { process.loadEnvFile(resolve(root, '.env')); } catch { /* no .env file: dem
 
 export const config = {
   port: Number(process.env.PORT ?? 3001),
+  geminiApiKey: process.env.GEMINI_API_KEY?.trim() || undefined,
+  geminiModel: process.env.GEMINI_MODEL?.trim() || 'gemini-2.5-flash',
   apiKey: process.env.ANTHROPIC_API_KEY?.trim() || undefined,
   model: process.env.CLAUDE_MODEL?.trim() || 'claude-opus-5-5',
   dataDir: resolve(root, 'server/data'),

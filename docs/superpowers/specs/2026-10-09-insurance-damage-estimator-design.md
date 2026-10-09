@@ -45,6 +45,7 @@ interface VisionAnalyzer {
 ```
 
 - `ClaudeAnalyzer` is used when `ANTHROPIC_API_KEY` is set. It sends all photos (resized to at most 1568 px on the long side) in one request and gets a schema-constrained JSON result through structured outputs (`messages.parse`); the model rejects forced tool calls.
+- `GeminiAnalyzer` (added later) is used when `GEMINI_API_KEY` is set and takes priority over Claude. It asks Gemini for its native `[ymin, xmin, ymax, xmax]` 0–1000 boxes and converts them.
 - `DemoAnalyzer` is used otherwise. It is deterministic: results are seeded from the photos' SHA-256 hashes, so the same photos always give the same report. The UI shows a "Demo mode" badge and the report records `analysisMode: "demo"`.
 - If the key is set and the Claude call fails, the claim is marked `failed` with the error message and a Retry button. It does not silently switch to demo data.
 

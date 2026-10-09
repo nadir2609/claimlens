@@ -25,12 +25,15 @@ Other commands:
 
 ## Analysis modes
 
+Set a key in `.env` to choose the provider. If both keys are set, Gemini is used.
+
 | Mode | When | What you get |
 |---|---|---|
-| Claude | `ANTHROPIC_API_KEY` is set in `.env` | Photos are analysed by Claude (`claude-opus-5-5`, change with `CLAUDE_MODEL`) |
+| Gemini | `GEMINI_API_KEY` is set | Photos are analysed by Google Gemini (`gemini-2.5-flash`, change with `GEMINI_MODEL`). Has a free tier with daily and per-minute limits. Get a key at https://aistudio.google.com/apikey |
+| Claude | `ANTHROPIC_API_KEY` is set and no Gemini key | Photos are analysed by Claude (`claude-opus-5-5`, change with `CLAUDE_MODEL`). Paid |
 | Demo | No key | Vehicle, damage and boxes are **simulated**, seeded from the photos so the same photos give the same report. The UI shows a "Demo mode" badge |
 
-In both modes the image quality check, severity score, cost estimate, fraud score and recommendation are computed by the same code. If a Claude call fails, the claim is marked failed with a Retry button; it does not fall back to simulated data.
+In every mode the image quality check, severity score, cost estimate, fraud score and recommendation are computed by the same code. If a model call fails, the claim is marked failed with a Retry button; it does not fall back to simulated data.
 
 ## How the pipeline works
 

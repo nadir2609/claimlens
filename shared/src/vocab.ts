@@ -45,4 +45,4 @@ export type ClaimStatus = (typeof CLAIM_STATUSES)[number];
 
 export type Band3 = 'Low' | 'Medium' | 'High';
 export type SeverityBand = 'Minor' | 'Moderate' | 'Severe';
-export type AnalysisMode = 'claude' | 'demo';
+export type AnalysisMode = 'gemini' | 'claude' | 'demo';
