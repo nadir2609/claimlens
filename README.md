@@ -41,7 +41,7 @@ In every mode the image quality check, severity score, cost estimate, fraud scor
 2. **Vision**: vehicle make, model, year and body type; per photo, the viewing angle, visible parts and damaged regions as `[x, y, width, height]` fractions of the image.
 3. **Coverage**: front, side and rear views, and all seven parts (Front Bumper, Hood, Headlights, Doors, Rear Bumper, Fenders, Windshield) must be visible somewhere. Gaps produce re-upload prompts; parts never shown are reported as "Not inspected".
 4. **Severity**: a 0–100 score from damage type and severity.
-5. **Cost**: parts, paint and labour per damage item, in US dollars. For a part that must be replaced, the app prices it on rockauto.com and partsouq.com (and on eBay when they have nothing) and uses the cheapest listing, with a link (see "Part prices").
+5. **Cost**: parts, paint and labour per damage item, in US dollars. For a part that must be replaced, the app prices it on rockauto.com and partsouq.com through Firecrawl and uses the cheapest listing, with a link (see "Part prices").
 6. **Fraud**: photos reused from earlier claims, editing software in EXIF, capture dates far apart, model-reported inconsistencies, unusually high totals.
 7. **Recommendation**: Fast-track approval, Standard review, or Manual Adjuster Review Required.
 
@@ -58,13 +58,6 @@ Set `FIRECRAWL_API_KEY` in `.env` (key from https://www.firecrawl.dev) to price 
 - Because PartSouq depends on a RockAuto listing for the part number, a part RockAuto does not list (usually whole doors and windshields, and vehicles never sold in North America) gets no price from either site. It falls back to a fixed price table and is marked as an estimate.
 - Each page is cached for 24 hours. A new vehicle costs about three Firecrawl credits, plus one to three per part type; repeats within a day cost none. Firecrawl's free plan limits requests per minute, so the app waits and retries when it is throttled.
 - A part with several kinds of damage is bought and painted once; later lines for it charge labour only.
-
-**eBay fallback.** Set `EBAY_CLIENT_ID` and `EBAY_CLIENT_SECRET` (from an app created at https://developer.ebay.com; use the Production keys) to search eBay Motors when RockAuto and PartSouq have no price for a part. This covers older and non-US cars, and whole doors and windshields.
-
-- It searches eBay's parts category for the make, model and part name ("LADA Samara front bumper") through eBay's official Browse API. It does not use Firecrawl credits.
-- A listing counts only if it is priced in USD at $20 or more, its title names the make and the part, and it is not an accessory, scale model or manual. If any listing names the model, only those are kept.
-- eBay mixes new and used parts from many sellers, and titles are free text, so open the link before relying on a price.
-- eBay works on its own too: with no Firecrawl key, every replaced part is searched on eBay.
 
 The cheapest listing is the cheapest across trims and sides, so check the fitment note (for example "SE Model", "Left") against the actual car. Prices exclude shipping and tax. Labour ($95 per hour) and paint are placeholder rates. Check both sites' terms before using automated access beyond a demo.
 

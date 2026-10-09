@@ -14,8 +14,6 @@ export const config = {
   apiKey: process.env.ANTHROPIC_API_KEY?.trim() || undefined,
   model: process.env.CLAUDE_MODEL?.trim() || 'claude-opus-5-5',
   firecrawlApiKey: process.env.FIRECRAWL_API_KEY?.trim() || undefined,
-  ebayClientId: process.env.EBAY_CLIENT_ID?.trim() || undefined,
-  ebayClientSecret: process.env.EBAY_CLIENT_SECRET?.trim() || undefined,
   dataDir: resolve(root, 'server/data'),
   uploadsDir: resolve(root, 'server/uploads'),
   clientDist: resolve(root, 'client/dist'),
