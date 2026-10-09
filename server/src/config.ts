@@ -13,6 +13,7 @@ export const config = {
   geminiModel: process.env.GEMINI_MODEL?.trim() || 'gemini-2.5-flash',
   apiKey: process.env.ANTHROPIC_API_KEY?.trim() || undefined,
   model: process.env.CLAUDE_MODEL?.trim() || 'claude-opus-5-5',
+  firecrawlApiKey: process.env.FIRECRAWL_API_KEY?.trim() || undefined,
   dataDir: resolve(root, 'server/data'),
   uploadsDir: resolve(root, 'server/uploads'),
   clientDist: resolve(root, 'client/dist'),

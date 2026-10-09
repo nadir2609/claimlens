@@ -41,11 +41,23 @@ In every mode the image quality check, severity score, cost estimate, fraud scor
 2. **Vision**: vehicle make, model, year and body type; per photo, the viewing angle, visible parts and damaged regions as `[x, y, width, height]` fractions of the image.
 3. **Coverage**: front, side and rear views, and all seven parts (Front Bumper, Hood, Headlights, Doors, Rear Bumper, Fenders, Windshield) must be visible somewhere. Gaps produce re-upload prompts; parts never shown are reported as "Not inspected".
 4. **Severity**: a 0–100 score from damage type and severity.
-5. **Cost**: parts, paint and labour per damage item from a fixed rate table.
+5. **Cost**: parts, paint and labour per damage item, in AZN. For a part that must be replaced, the app searches avtopro.az and ehtiyathisseleri.az through Firecrawl and uses the cheapest matching listing, with a link (see "Part prices").
 6. **Fraud**: photos reused from earlier claims, editing software in EXIF, capture dates far apart, model-reported inconsistencies, unusually high totals.
 7. **Recommendation**: Fast-track approval, Standard review, or Manual Adjuster Review Required.
 
 The exact weights, prices and thresholds are in [the design spec](docs/superpowers/specs/2026-10-09-insurance-damage-estimator-design.md) and in `server/src/pipeline/`.
+
+## Part prices
+
+Set `FIRECRAWL_API_KEY` in `.env` (key from https://www.firecrawl.dev) to price replaced parts from real listings.
+
+- For each part being replaced, the app reads the search results for the part name in Azerbaijani plus the vehicle make on both sites, for example `https://www.avtopro.az/products?search=bamper%20Mazda`.
+- A listing counts only if its title names the part and the make, is not an accessory (bracket, trim, seal, cover and similar), is for the right side (front or rear bumper), and costs at least 20 AZN. If any listing names the model, only those are considered.
+- The cheapest match is charged and linked in the cost table; up to four other matches are listed under it.
+- Search pages are cached for 24 hours, so each part and make costs at most two Firecrawl credits per day.
+- When nothing matches, or no key is set, the part price falls back to a fixed table and the line is marked "Estimated price, no listing found".
+
+Matching is by title text, so a listing can still be the wrong generation or trim: open the link before relying on it. Labour (160 AZN per hour) and paint are placeholder rates, not from these sites. Check the sites' terms before using automated access beyond a demo.
 
 ## Project layout
 
@@ -60,7 +72,7 @@ Data is stored in `server/data/claims.db` and `server/uploads/`. Delete both to 
 ## Known limits
 
 - Damage regions are bounding boxes, not polygons.
-- Prices and labour hours are placeholder figures, not real market data.
+- Labour hours, labour rate, paint and the fallback part prices are placeholder figures. Only replaced-part prices come from live listings.
 - There is no login; anyone who can open the app can approve or reject claims.
 - Submitting the same photos twice raises the duplicate-photo fraud signal on the second claim. That is intended, but worth knowing when you demo with one set of photos.
 - "Print / PDF" uses the browser's print dialog; choose "Save as PDF" there.

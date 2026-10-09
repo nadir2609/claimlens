@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import type { Stage } from '@claimlens/shared';
 import type { VisionAnalyzer } from '../analyzers/types';
 import type { EventBus } from '../events';
+import { findOffers, type PartLookup } from '../parts/lookup';
 import type { ClaimStore } from '../store';
 import { recommend } from './action';
 import { assessCoverage } from './coverage';
@@ -16,6 +17,8 @@ export interface PipelineDeps {
   events: EventBus;
   uploadsDir: string;
   stageDelayMs: number;
+  /** Looks up real part prices. When absent, replaced parts use the fallback price table. */
+  partLookup?: PartLookup;
 }
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -63,7 +66,10 @@ export async function runPipeline(deps: PipelineDeps, claimId: string): Promise<
       report.damages = mergeDamages(report.photos);
       report.severity = scoreSeverity(report.damages);
     });
-    report.cost = await stage('cost', () => estimateCost(report.damages, report.vehicle.make));
+    report.cost = await stage('cost', async () => {
+      const offers = deps.partLookup ? await findOffers(deps.partLookup, report.damages, report.vehicle) : {};
+      return estimateCost(report.damages, report.vehicle.make, offers);
+    });
     report.fraud = await stage('fraud', () => assessFraud({
       photos: report.photos.map((p) => ({ id: p.id, sha256: p.sha256, dhash: p.dhash, ...p.exif })),
       priorHashes: store.earlierHashes(claimId),

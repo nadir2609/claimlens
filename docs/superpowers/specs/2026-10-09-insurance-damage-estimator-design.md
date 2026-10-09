@@ -161,6 +161,12 @@ The table shows part, damage, operation, parts, paint, labour hours, labour rate
 labour cost and line total, then subtotals and a grand total. The grand total always
 equals the sum of the line totals.
 
+**Revision (live part prices, AZN).** Costs are now in AZN. The figures above were converted at about 1.7 AZN per USD
+(labour 160 AZN/hour; paint 255 / 510 / 765; base part prices x1.7), and the money thresholds elsewhere in this
+document became 4,250, 13,600 and 20,400 AZN. When `FIRECRAWL_API_KEY` is set, a replaced part is priced from the
+cheapest matching listing on avtopro.az or ehtiyathisseleri.az (read through Firecrawl, cached 24 hours), with the
+link stored on the cost line; the table above is the fallback when no listing matches.
+
 ### 3.6 Fraud risk
 
 The brief names fraud alerts without defining them. Signals and points:

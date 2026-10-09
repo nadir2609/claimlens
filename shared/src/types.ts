@@ -75,6 +75,19 @@ export interface DamageItem {
   photoIds: string[];
 }
 
+export interface PartListing {
+  title: string;
+  price: number;
+  url: string;
+  /** The site the listing came from, for example "avtopro.az". */
+  source: string;
+}
+
+export interface PartOffer {
+  cheapest: PartListing;
+  alternatives: PartListing[];
+}
+
 export interface CostLine {
   damageId: string;
   part: Part;
@@ -82,6 +95,10 @@ export interface CostLine {
   severity: Severity;
   operation: 'Repair' | 'Replace';
   parts: number;
+  /** Where the parts price came from: a marketplace listing, the fallback table, or no part needed. */
+  partsBasis: 'listing' | 'estimate' | 'none';
+  partListing: PartListing | null;
+  alternatives: PartListing[];
   paint: number;
   laborHours: number;
   laborRate: number;
@@ -99,6 +116,7 @@ export interface CostEstimate {
   makeTier: 'economy' | 'mid' | 'luxury';
   tierMultiplier: number;
   laborRate: number;
+  currency: 'AZN';
 }
 
 export interface Coverage {

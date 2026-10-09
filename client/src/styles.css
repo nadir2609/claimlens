@@ -220,6 +220,10 @@ img { max-width: 100%; }
 .gauge-labels span { flex-basis: 0; white-space: nowrap; }
 
 .total { font-size: 1.5rem; font-weight: 700; }
+.cost-table td.num, .cost-table th.r { white-space: nowrap; }
+.part-source { margin-top: 0.2rem; max-width: 34ch; line-height: 1.35; }
+.part-source ul { margin: 0.25rem 0 0; padding-left: 1rem; }
+.part-source summary { cursor: pointer; color: var(--text-muted); }
 .score-pair { display: inline-flex; align-items: center; gap: 0.5rem; }
 .signals { list-style: none; margin: 0 0 0.5rem; padding: 0; }
 .signals li { display: flex; justify-content: space-between; gap: 1rem; padding: 0.55rem 0; border-bottom: 1px solid var(--border); }

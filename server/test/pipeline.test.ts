@@ -122,6 +122,23 @@ describe('runPipeline', () => {
     expect(r.recommendation.action).toBe('Fast-track approval');
   });
 
+  it('prices a replaced part from the marketplace lookup and keeps the link in the report', async () => {
+    deps.analyzer = fixed((ids) => ({
+      vehicle: { make: 'Mazda', model: 'CX-7', year: '2010', bodyType: 'SUV', confidence: 0.9 },
+      photos: ids.map((photoId, i) => ({
+        photoId, angle: 'front', visibleParts: ['Front Bumper'],
+        damages: i === 0 ? [{ part: 'Front Bumper', type: 'Dent', severity: 'High', bbox: [0.1, 0.1, 0.2, 0.2], confidence: 0.9, note: '' }] : [],
+      })),
+      fraudObservations: [],
+    }));
+    const cheapest = { title: 'Ön bamper Mazda CX-7', price: 417.61, url: 'https://www.avtopro.az/products/on-bamper-mazda-cx-7-207408', source: 'avtopro.az' };
+    deps.partLookup = { find: async (part) => (part === 'Front Bumper' ? { cheapest, alternatives: [] } : null) };
+    const id = await addClaim([1, 2, 3, 4]);
+    await runPipeline(deps, id);
+    const line = deps.store.get(id)!.cost.lines[0];
+    expect(line).toMatchObject({ parts: 417.61, partsBasis: 'listing', partListing: cheapest });
+  });
+
   it('skips photos that failed quality and marks uncovered parts for manual review', async () => {
     deps.analyzer = fixed((ids) => ({
       vehicle: { make: 'Toyota', model: 'Camry', year: '2022', bodyType: 'Sedan', confidence: 0.9 },

@@ -1,5 +1,5 @@
 import {
-  PARTS, type Coverage, type CostEstimate, type FraudAssessment, type Recommendation,
+  PARTS, type Coverage, type CostEstimate, type CostLine, type FraudAssessment, type Recommendation,
   type SeverityBand, type VehicleInfo,
 } from '@claimlens/shared';
 import { money } from '../lib/format';
@@ -83,6 +83,39 @@ export function SeverityGauge({ score, band }: { score: number; band: SeverityBa
   );
 }
 
+/** Shows where a replaced part's price came from: the cheapest listing with a link, or a fallback estimate. */
+function PartSource({ line }: { line: CostLine }) {
+  // Reports saved before live prices existed have no basis recorded.
+  const basis = line.partsBasis ?? (line.operation === 'Replace' ? 'estimate' : 'none');
+  if (basis === 'none') return null;
+  if (basis === 'estimate' || !line.partListing) {
+    return <div className="part-source muted small">Estimated price, no listing found</div>;
+  }
+  const alternatives = line.alternatives ?? [];
+  return (
+    <div className="part-source small">
+      <div>
+        Cheapest listing:{' '}
+        <a href={line.partListing.url} target="_blank" rel="noreferrer">{line.partListing.title}</a>{' '}
+        <span className="muted">({line.partListing.source})</span>
+      </div>
+      {alternatives.length > 0 && (
+        <details>
+          <summary>{alternatives.length} other {alternatives.length === 1 ? 'listing' : 'listings'}</summary>
+          <ul>
+            {alternatives.map((a) => (
+              <li key={a.url}>
+                <a href={a.url} target="_blank" rel="noreferrer">{a.title}</a>{' '}
+                <span className="muted">({a.source})</span> <span className="num">{money(a.price)}</span>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+    </div>
+  );
+}
+
 export function CostTable({ cost }: { cost: CostEstimate }) {
   return (
     <section className="card">
@@ -111,7 +144,10 @@ export function CostTable({ cost }: { cost: CostEstimate }) {
             <tbody>
               {cost.lines.map((l) => (
                 <tr key={l.damageId}>
-                  <td>{l.part}</td>
+                  <td>
+                    {l.part}
+                    <PartSource line={l} />
+                  </td>
                   <td>{l.type} <span className="muted">({l.severity})</span></td>
                   <td>{l.operation}</td>
                   <td className="r num">{money(l.parts)}</td>
@@ -138,8 +174,10 @@ export function CostTable({ cost }: { cost: CostEstimate }) {
         </div>
       )}
       <p className="muted small">
-        Parts priced at the {cost.makeTier} make tier (×{cost.tierMultiplier.toFixed(1)}). Labour at {money(cost.laborRate)} per
-        hour. Parts are charged only when an item is replaced. Figures are estimates from a fixed rate table.
+        Parts are charged only when an item is replaced. Where a matching listing was found on avtopro.az or
+        ehtiyathisseleri.az, the cheapest one is used and linked; check the listing fits the vehicle before relying on it.
+        Otherwise the part price is an estimate from a fixed table at the {cost.makeTier} make tier
+        (×{cost.tierMultiplier.toFixed(1)}). Labour ({money(cost.laborRate)} per hour) and paint are placeholder rates.
       </p>
     </section>
   );
